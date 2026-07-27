@@ -12,10 +12,15 @@ import (
 func main() {
 
 	cudaPID := flag.String("job-id", "", "PID of the process to monitor")
+	programName := flag.String("name", "", "name of the proccess to monitor")
 	flag.Parse()
 
 	if *cudaPID == "" {
 		log.Fatal("CUDA PID not found")
+		return
+	}
+	if *programName == "" {
+		log.Fatal("Program name not found")
 		return
 	}
 	log.Printf("Uruchamiam eden-monitor dla Job ID: %s (Monitor PID: %d)", *cudaPID, os.Getpid())
@@ -34,7 +39,7 @@ func main() {
 	}
 	defer usage_gpu.Close()
 
-	cpu_ram_cmd := exec.Command("pidstat", "-r", "-u", "-p", *cudaPID, "1")
+	cpu_ram_cmd := exec.Command("pidstat", "-h", "-r", "-u", "-t", "-C", *programName, "1")
 	cpu_ram_cmd.Stdout = usage_cpu_ram
 	cpu_ram_cmd.Stderr = os.Stderr
 
