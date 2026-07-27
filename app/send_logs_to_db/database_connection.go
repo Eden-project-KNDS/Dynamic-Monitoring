@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -33,6 +34,7 @@ func (m *DBManager) InitDatabase() error {
 		CREATE TABLE IF NOT EXISTS resource_metrics(
 			time TIMESTAMPTZ NOT NULL,
 			job_id TEXT NOT NULL,
+			account TEXT NOT NULL,
 			pid TEXT NOT NULL,
 			usr_percentage DOUBLE PRECISION,
 			system_percentage DOUBLE PRECISION,
@@ -43,7 +45,7 @@ func (m *DBManager) InitDatabase() error {
 			minflts_per_s DOUBLE PRECISION,
 			majflts_per_s DOUBLE PRECISION,
 			vsz INTEGER,
-			RSS INTEGER,
+			rss INTEGER,
 			ram_percentage DOUBLE PRECISION,
 			utilization_gpu_percentage DOUBLE PRECISION,
 			utilization_gpy_memory DOUBLE PRECISION,
@@ -65,4 +67,49 @@ func (m *DBManager) InitDatabase() error {
 
 	}
 	return nil
+}
+
+func (m *DBManager) SaveMetricBatch(accountName *string, slurmPID *string) error {
+
+	tx, err := m.DB.Begin()
+	if err != nil {
+		log.Fatalf("failed to begin transaction %v", err)
+		return err
+	}
+	stmt, err := tx.Prepare(pq.CopyIn("resource_metrics", "time", "job_id",
+		"account", "pid", "usr_percentage", "system_percentage", "guest_percentage", "wait_percentage", "cpu_percentage", "cpu",
+		"minflts_per_s", "majflts_per_s", "vsz", "rss", "ram_percentage", "utilization_gpu_percentage", "utilization_gpy_memory", "memory_gpu_used_mib"))
+
+	if err != nil {
+		tx.Rollback()
+		log.Fatalf("failed to prepare copy: %v", err)
+		return err
+	}
+	err = readFilesSaveToDb(accountName, slurmPID)
+	if err != nil {
+		return err
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		tx.Rollback()
+		log.Fatalf("failed to flush copy statement: %v", err)
+		return err
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		tx.Rollback()
+		log.Fatalf("failed to close statement %v", err)
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Fatalf("failed to commit transaction %v", err)
+		return err
+	}
+
+	return nil
+
 }

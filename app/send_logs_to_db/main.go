@@ -1,8 +1,25 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"log"
+)
 
 func main() {
+	slurmPID := flag.String("job-id", "", "Slurm PID")
+	accountName := flag.String("account", "", "account name")
+	flag.Parse()
+
+	if *slurmPID == "" {
+		log.Fatal("Slurm PID not found")
+		return
+	}
+	if *accountName == "" {
+		log.Fatal("Account name not found")
+		return
+	}
+
 	connStr := "host=localhost port=5432 user=postgres password=mysecretpassword dbname=postgres sslmode=disable"
 	Type := "postgres"
 
