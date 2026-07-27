@@ -11,7 +11,7 @@ import (
 
 func main() {
 
-	cudaPID := flag.String("Cuda PID", "", "PID of the process to monitor")
+	cudaPID := flag.String("job-id", "", "PID of the process to monitor")
 	flag.Parse()
 
 	if *cudaPID == "" {
