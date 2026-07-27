@@ -16,3 +16,5 @@ build/
 .DS_Store
 .vscode/
 .conda/
+app/monitor/test/nvidia-smi
+app/monitor/test/pidstat
