@@ -27,14 +27,14 @@ func main() {
 	}
 	log.Printf("Uruchamiam eden-monitor dla Job ID: %s (Monitor PID: %d)", *cudaPID, os.Getpid())
 
-	usage_cpu_ramFile, err := os.Create("usage_cpu_ram" + *cudaPID + ".log")
+	usage_cpu_ramFile, err := os.Create("usage_cpu_ram_" + *cudaPID + ".log")
 	if err != nil {
 		log.Fatal("Error creating file")
 		return
 	}
 	defer usage_cpu_ramFile.Close()
 
-	usage_gpuFile, err := os.Create("usage_gpu" + *cudaPID + ".log")
+	usage_gpuFile, err := os.Create("usage_gpu_" + *cudaPID + ".log")
 	if err != nil {
 		log.Fatal("Error creating file")
 		return
