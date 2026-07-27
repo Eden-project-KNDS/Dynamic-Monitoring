@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 
 	_ "github.com/lib/pq"
@@ -42,7 +41,7 @@ func (m *DBManager) InitDatabase() error {
 			cpu_percentage DOUBLE PRECISION,
 			cpu INTEGER,
 			minflts_per_s DOUBLE PRECISION,
-			majflts_per_s DOUBLE PRECISION.
+			majflts_per_s DOUBLE PRECISION,
 			vsz INTEGER,
 			RSS INTEGER,
 			ram_percentage DOUBLE PRECISION,
@@ -53,14 +52,16 @@ func (m *DBManager) InitDatabase() error {
 	`
 	_, err := m.DB.Exec(createTableQuery)
 	if err != nil {
-		return fmt.Errorf("failed to create table: %v", err)
+		log.Fatalf("failed to create table: %v", err)
+		return err
 	}
 	createHypertableQuery := `
 		SELECT create_hypertable('resource_metrics', 'time', if_not_exists => TRUE);
 	`
 	_, err = m.DB.Exec(createHypertableQuery)
 	if err != nil {
-		return fmt.Errorf("failed to create hypertable: %v", err)
+		log.Fatalf("failed to create hypertable: %v", err)
+		return err
 
 	}
 	return nil
