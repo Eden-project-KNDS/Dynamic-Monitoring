@@ -34,8 +34,21 @@ func (m *DBManager) InitDatabase() error {
 		CREATE TABLE IF NOT EXISTS resource_metrics(
 			time TIMESTAMPTZ NOT NULL,
 			job_id TEXT NOT NULL,
-			cpu_usage DOUBLE PRECISION,
-			ram_usage DOUBLE PRECISION
+			pid TEXT NOT NULL,
+			usr_percentage DOUBLE PRECISION,
+			system_percentage DOUBLE PRECISION,
+			guest_percentage DOUBLE PRECISION,
+			wait_percentage DOUBLE PRECISION,
+			cpu_percentage DOUBLE PRECISION,
+			cpu INTEGER,
+			minflts_per_s DOUBLE PRECISION,
+			majflts_per_s DOUBLE PRECISION.
+			vsz INTEGER,
+			RSS INTEGER,
+			ram_percentage DOUBLE PRECISION,
+			utilization_gpu_percentage DOUBLE PRECISION,
+			utilization_gpy_memory DOUBLE PRECISION,
+			memory_gpu_used_mib  DOUBLE PRECISION
 			);
 	`
 	_, err := m.DB.Exec(createTableQuery)
