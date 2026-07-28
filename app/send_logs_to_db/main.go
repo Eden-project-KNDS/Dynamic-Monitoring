@@ -35,6 +35,13 @@ func main() {
 	if err != nil {
 		return
 	}
-	fmt.Print("Success")
+	fmt.Println("Connection established")
+
+	err = manager.SaveMetricBatch(accountName, slurmPID)
+	if err != nil {
+		return
+	}
+
+	fmt.Println("successfully saved logs")
 
 }

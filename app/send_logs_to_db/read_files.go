@@ -50,10 +50,13 @@ func parseLine(cpuLine *string, gpuLine *string) (*DBEntry, error) {
 	dbRow.RamPercentage, err = strconv.ParseFloat(cpuLineSpilt[14], 64)
 
 	dbRow.UtilizationGpuPercentage, err = strconv.ParseFloat(gpuLineSplit[2], 64)
-	dbRow.UtilizationGpuMemory, err = strconv.ParseFloat(gpuLineSplit[3], 64)
-	dbRow.MemoryGpuUsedMib, err = strconv.ParseFloat(gpuLineSplit[4], 64)
+	dbRow.UtilizationGpuMemory, err = strconv.ParseFloat(gpuLineSplit[4], 64)
+	dbRow.MemoryGpuUsedMib, err = strconv.ParseFloat(gpuLineSplit[6], 64)
 
 	layout := "2006/01/02 15:04:05.000"
+
+	gpuLineSplit[1] = gpuLineSplit[1][:len(gpuLineSplit[1])-1]
+
 	combinedString := gpuLineSplit[0] + " " + gpuLineSplit[1]
 
 	parsedTime, err := time.Parse(layout, combinedString)

@@ -56,8 +56,8 @@ func (m *DBManager) InitDatabase() error {
 		CREATE TABLE IF NOT EXISTS resource_metrics(
 			time TIMESTAMPTZ NOT NULL,
 			job_id TEXT NOT NULL,
-			account TEXT NOT NULL,
-			pid TEXT NOT NULL,
+			account TEXT,
+			pid TEXT,
 			usr_percentage DOUBLE PRECISION,
 			system_percentage DOUBLE PRECISION,
 			guest_percentage DOUBLE PRECISION,
@@ -100,7 +100,7 @@ func (m *DBManager) SaveMetricBatch(accountName *string, slurmPID *string) error
 	}
 	stmt, err := tx.Prepare(pq.CopyIn("resource_metrics", "time", "job_id",
 		"account", "pid", "usr_percentage", "system_percentage", "guest_percentage", "wait_percentage", "cpu_percentage", "cpu",
-		"minflts_per_s", "majflts_per_s", "vsz", "rss", "ram_percentage", "utilization_gpu_percentage", "utilization_gpy_memory", "memory_gpu_used_mib"))
+		"minflts_per_s", "majflts_per_s", "vsz", "rss", "ram_percentage", "utilization_gpu_percentage", "utilization_gpu_memory", "memory_gpu_used_mib"))
 
 	if err != nil {
 		tx.Rollback()
