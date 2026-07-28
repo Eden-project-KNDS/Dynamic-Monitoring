@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"time"
 
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
@@ -10,6 +11,27 @@ import (
 
 type DBManager struct {
 	DB *sql.DB
+}
+
+type DBEntry struct {
+	Time                     time.Time
+	JobId                    string
+	Account                  string
+	PID                      string
+	UsrPercentage            float64
+	SystemPercentage         float64
+	GuestPercentage          float64
+	WaitPercentage           float64
+	CpuPercentage            float64
+	Cpu                      int32
+	MinfltsPerS              float64
+	MajfltsPerS              float64
+	VSZ                      int32
+	RSS                      int32
+	RamPercentage            float64
+	UtilizationGpuPercentage float64
+	UtilizationGpuMemory     float64
+	MemoryGpuUsedMib         float64
 }
 
 func (m *DBManager) connect(connStr *string, driverType *string) error {
@@ -48,7 +70,7 @@ func (m *DBManager) InitDatabase() error {
 			rss INTEGER,
 			ram_percentage DOUBLE PRECISION,
 			utilization_gpu_percentage DOUBLE PRECISION,
-			utilization_gpy_memory DOUBLE PRECISION,
+			utilization_gpu_memory DOUBLE PRECISION,
 			memory_gpu_used_mib  DOUBLE PRECISION
 			);
 	`
@@ -85,7 +107,7 @@ func (m *DBManager) SaveMetricBatch(accountName *string, slurmPID *string) error
 		log.Fatalf("failed to prepare copy: %v", err)
 		return err
 	}
-	err = readFilesSaveToDb(accountName, slurmPID)
+	err = readFilesSaveToDb(accountName, slurmPID, tx, stmt)
 	if err != nil {
 		return err
 	}
