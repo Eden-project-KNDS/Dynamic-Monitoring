@@ -23,11 +23,11 @@ type DBEntry struct {
 	GuestPercentage          float64
 	WaitPercentage           float64
 	CpuPercentage            float64
-	Cpu                      int32
+	Cpu                      float64
 	MinfltsPerS              float64
 	MajfltsPerS              float64
-	VSZ                      int32
-	RSS                      int32
+	VSZ                      float64
+	RSS                      float64
 	RamPercentage            float64
 	UtilizationGpuPercentage float64
 	UtilizationGpuMemory     float64
@@ -63,11 +63,11 @@ func (m *DBManager) InitDatabase() error {
 			guest_percentage DOUBLE PRECISION,
 			wait_percentage DOUBLE PRECISION,
 			cpu_percentage DOUBLE PRECISION,
-			cpu INTEGER,
+			cpu DOUBLE PRECISION,
 			minflts_per_s DOUBLE PRECISION,
 			majflts_per_s DOUBLE PRECISION,
-			vsz INTEGER,
-			rss INTEGER,
+			vsz DOUBLE PRECISION,
+			rss DOUBLE PRECISION,
 			ram_percentage DOUBLE PRECISION,
 			utilization_gpu_percentage DOUBLE PRECISION,
 			utilization_gpu_memory DOUBLE PRECISION,
