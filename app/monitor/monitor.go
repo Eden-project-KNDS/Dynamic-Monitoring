@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -25,22 +27,27 @@ func main() {
 	}
 	log.Printf("Uruchamiam eden-monitor dla Job ID: %s (Monitor PID: %d)", *cudaPID, os.Getpid())
 
-	usage_cpu_ram, err := os.Create("usage_cpu_ram.log")
+	usage_cpu_ramFile, err := os.Create("usage_cpu_ram_" + *cudaPID + ".log")
 	if err != nil {
 		log.Fatal("Error creating file")
 		return
 	}
-	defer usage_cpu_ram.Close()
+	defer usage_cpu_ramFile.Close()
 
-	usage_gpu, err := os.Create("usage_gpu.log")
+	usage_gpuFile, err := os.Create("usage_gpu_" + *cudaPID + ".log")
 	if err != nil {
 		log.Fatal("Error creating file")
 		return
 	}
-	defer usage_gpu.Close()
+	defer usage_gpuFile.Close()
 
-	cpu_ram_cmd := exec.Command("pidstat", "-h", "-r", "-u", "-t", "-C", *programName, "1")
-	cpu_ram_cmd.Stdout = usage_cpu_ram
+	cpu_ram_cmd := exec.Command("pidstat", "-h", "-r", "-u", "-C", *programName, "1")
+
+	stdout, err := cpu_ram_cmd.StdoutPipe()
+	if err != nil {
+		log.Fatalf("Couldn't open a pipe %v", err)
+		return
+	}
 	cpu_ram_cmd.Stderr = os.Stderr
 
 	err = cpu_ram_cmd.Start()
@@ -48,8 +55,28 @@ func main() {
 		log.Fatalf("Failed to start pidstat: %v", err)
 	}
 
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		headWritten := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+
+			if strings.HasPrefix(line, "#") {
+				if !headWritten {
+					usage_cpu_ramFile.WriteString(line + "\n")
+					headWritten = true
+				}
+				continue
+			}
+			usage_cpu_ramFile.WriteString(line + "\n")
+		}
+	}()
+
 	gpu_command := exec.Command("nvidia-smi", "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used", "--format=csv", "-l", "1")
-	gpu_command.Stdout = usage_gpu
+	gpu_command.Stdout = usage_gpuFile
 	gpu_command.Stderr = os.Stderr
 
 	err1 := gpu_command.Start()

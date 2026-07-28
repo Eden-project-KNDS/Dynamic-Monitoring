@@ -1,3 +1,3 @@
 
 monitor:
-	go build -o eden-monitor monitor.go
+	go build -o eden-monitor monitor.go 
