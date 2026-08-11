@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -16,13 +17,13 @@ func openFiles(slurmPID *string) (*os.File, *os.File, error) {
 
 	cpuFile, err := os.Open(cpuFileName)
 	if err != nil {
-		log.Fatalf("couldn't open cpu log file %v", err)
+		log.Printf("couldn't open cpu log file %v", err)
 		return nil, nil, err
 	}
 
 	gpuFile, err := os.Open(gpuFileName)
 	if err != nil {
-		log.Fatalf("couldn't open gpu log file %v", err)
+		log.Printf("couldn't open gpu log file %v", err)
 		return nil, nil, err
 	}
 	return cpuFile, gpuFile, nil
@@ -61,7 +62,7 @@ func parseLine(cpuLine *string, gpuLine *string) (*DBEntry, error) {
 
 	parsedTime, err := time.Parse(layout, combinedString)
 	if err != nil {
-		log.Fatalf("Error parsing time %v ", err)
+		log.Printf("Error parsing time %v ", err)
 		return nil, err
 	}
 	dbRow.Time = parsedTime
@@ -91,6 +92,7 @@ func readFilesSaveToDb(accountName *string, slurmPID *string, tx *sql.Tx, stmt *
 	// Skip 1 header line in the GPU log
 	gpuScanner.Scan()
 
+	fmt.Println("Reading files")
 	for cpuScanner.Scan() && gpuScanner.Scan() {
 		cpuLine := cpuScanner.Text()
 		gpuLine := gpuScanner.Text()
@@ -109,10 +111,20 @@ func readFilesSaveToDb(accountName *string, slurmPID *string, tx *sql.Tx, stmt *
 
 		if err != nil {
 			tx.Rollback()
-			log.Fatalf("Error when buffering metrics: %v", err)
+			log.Printf("Error when buffering metrics: %v", err)
 			return err
 		}
 
+	}
+	if err := cpuScanner.Err(); err != nil {
+		// If err is nil, the scanner reached EOF normally.
+		// If err is not nil, an I/O error occurred.
+		fmt.Fprintln(os.Stderr, "reading input:", err)
+	}
+	if err := gpuScanner.Err(); err != nil {
+		// If err is nil, the scanner reached EOF normally.
+		// If err is not nil, an I/O error occurred.
+		fmt.Fprintln(os.Stderr, "reading input:", err)
 	}
 
 	return nil

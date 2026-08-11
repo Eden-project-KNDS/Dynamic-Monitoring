@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 )
 
 func main() {
@@ -13,11 +12,11 @@ func main() {
 	flag.Parse()
 
 	if *slurmPID == "" {
-		log.Fatal("Slurm PID not found")
+		log.Printf("Slurm PID not found")
 		return
 	}
 	if *accountName == "" {
-		log.Fatal("Account name not found")
+		log.Printf("Account name not found")
 		return
 	}
 
@@ -44,17 +43,17 @@ func main() {
 	}
 
 	fmt.Println("successfully saved logs")
-	var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
-	var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"
-	fmt.Println("Removing log files")
+	//var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
+	//var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"
+	//fmt.Println("Removing log files")
 
-	err = os.Remove(cpuFileName)
-	if err != nil {
-		log.Fatalln("Couldn't remove cpu log file")
-	}
-	err = os.Remove(gpuFileName)
-	if err != nil {
-		log.Fatalln("Couldn't remove gpu log file")
-	}
+	//err = os.Remove(cpuFileName)
+	//if err != nil {
+	//	log.Fatalln("Couldn't remove cpu log file")
+	//}
+	//err = os.Remove(gpuFileName)
+	//if err != nil {
+	//	log.Fatalln("Couldn't remove gpu log file")
+	//}
 
 }
