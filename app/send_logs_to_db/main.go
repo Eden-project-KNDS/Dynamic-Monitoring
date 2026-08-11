@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 )
 
 func main() {
@@ -32,29 +31,27 @@ func main() {
 	}
 	defer manager.DB.Close()
 
+	manager.accountName = accountName
+	manager.slurmPID = slurmPID
+
 	err = manager.InitDatabase()
 	if err != nil {
 		return
 	}
 	fmt.Println("Connection established")
 
-	err = manager.SaveMetricBatch(accountName, slurmPID)
-	if err != nil {
-		return
-	}
-
 	fmt.Println("successfully saved logs")
-	var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
-	var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"
-	fmt.Println("Removing log files")
+	//var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
+	//var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"
+	//fmt.Println("Removing log files")
 
-	err = os.Remove(cpuFileName)
-	if err != nil {
-		log.Fatalln("Couldn't remove cpu log file")
-	}
-	err = os.Remove(gpuFileName)
-	if err != nil {
-		log.Fatalln("Couldn't remove gpu log file")
-	}
+	//err = os.Remove(cpuFileName)
+	//if err != nil {
+	//	log.Fatalln("Couldn't remove cpu log file")
+	//}
+	//err = os.Remove(gpuFileName)
+	//if err != nil {
+	//	log.Fatalln("Couldn't remove gpu log file")
+	//}
 
 }
