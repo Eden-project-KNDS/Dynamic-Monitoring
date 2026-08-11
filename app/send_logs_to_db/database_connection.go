@@ -13,22 +13,28 @@ type DBManager struct {
 	DB *sql.DB
 }
 
-type DBEntry struct {
-	Time                     time.Time
+type DBUserTableEntry struct {
+	Time    time.Time
+	JobId   string
+	Account string
+}
+type DBCpuTableEntry struct {
+	JobId            string
+	PID              string
+	UsrPercentage    float64
+	SystemPercentage float64
+	GuestPercentage  float64
+	WaitPercentage   float64
+	CpuPercentage    float64
+	Cpu              float64
+	MinfltsPerS      float64
+	MajfltsPerS      float64
+	VSZ              float64
+	RSS              float64
+	RamPercentage    float64
+}
+type DBGpuTableEntry struct {
 	JobId                    string
-	Account                  string
-	PID                      string
-	UsrPercentage            float64
-	SystemPercentage         float64
-	GuestPercentage          float64
-	WaitPercentage           float64
-	CpuPercentage            float64
-	Cpu                      float64
-	MinfltsPerS              float64
-	MajfltsPerS              float64
-	VSZ                      float64
-	RSS                      float64
-	RamPercentage            float64
 	UtilizationGpuPercentage float64
 	UtilizationGpuMemory     float64
 	MemoryGpuUsedMib         float64
@@ -52,11 +58,17 @@ func (m *DBManager) connect(connStr *string, driverType *string) error {
 }
 
 func (m *DBManager) InitDatabase() error {
-	createTableQuery := `
-		CREATE TABLE IF NOT EXISTS resource_metrics(
+	createUserTAble := `
+		CREATE TABLE IF NOT EXISTS UserAccount(
+			job_id TEXT PRIMARY KEY,
 			time TIMESTAMPTZ NOT NULL,
-			job_id TEXT NOT NULL,
-			account TEXT,
+			account TEXT
+			);
+	`
+
+	createCPUTable := `
+		CREATE TABLE IF NOT EXISTS CPUMetrics(
+			job_id TEXT NOT NULL REFERENCES UserAccount(job_id) ON DELETE CASCADE,
 			pid TEXT,
 			usr_percentage DOUBLE PRECISION,
 			system_percentage DOUBLE PRECISION,
@@ -68,19 +80,38 @@ func (m *DBManager) InitDatabase() error {
 			majflts_per_s DOUBLE PRECISION,
 			vsz DOUBLE PRECISION,
 			rss DOUBLE PRECISION,
-			ram_percentage DOUBLE PRECISION,
-			utilization_gpu_percentage DOUBLE PRECISION,
+			ram_percentage DOUBLE PRECISION
+			);
+	
+	`
+
+	createGPUTable := `
+		CREATE TABLE IF NOT EXISTS GPUMetric(
+		job_id TEXT NOT NULL REFERENCES UserAccount(job_id) ON DELETE CASCADE,
+		utilization_gpu_percentage DOUBLE PRECISION,
 			utilization_gpu_memory DOUBLE PRECISION,
 			memory_gpu_used_mib  DOUBLE PRECISION
 			);
 	`
-	_, err := m.DB.Exec(createTableQuery)
+
+	_, err := m.DB.Exec(createUserTAble)
 	if err != nil {
-		log.Fatalf("failed to create table: %v", err)
+		log.Fatalf("failed to create user table: %v", err)
 		return err
 	}
+	_, err = m.DB.Exec(createCPUTable)
+	if err != nil {
+		log.Fatalf("failed to create cpu table: %v", err)
+		return err
+	}
+	_, err = m.DB.Exec(createGPUTable)
+	if err != nil {
+		log.Fatalf("failed to create gpu table: %v", err)
+		return err
+	}
+
 	createHypertableQuery := `
-		SELECT create_hypertable('resource_metrics', 'time', if_not_exists => TRUE);
+		SELECT create_hypertable('UserAccount', 'time', if_not_exists => TRUE);
 	`
 	_, err = m.DB.Exec(createHypertableQuery)
 	if err != nil {
