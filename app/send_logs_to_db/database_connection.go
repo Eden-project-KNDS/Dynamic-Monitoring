@@ -59,13 +59,13 @@ func (m *DBManager) connect(connStr *string, driverType *string) error {
 
 	m.DB, err = sql.Open(*driverType, *connStr)
 	if err != nil {
-		log.Fatalf("Error parsing connection string: %v\n", err)
+		log.Printf("Error parsing connection string: %v\n", err)
 		return err
 	}
 
 	err = m.DB.Ping()
 	if err != nil {
-		log.Fatalf("Error connecting to the db %v\n", err)
+		log.Printf("Error connecting to the db %v\n", err)
 		return err
 	}
 	return nil
@@ -168,7 +168,7 @@ func (m *DBManager) SaveMetricBatch(metric logType) error {
 
 	tx, err := m.DB.Begin()
 	if err != nil {
-		log.Fatalf("failed to begin transaction %v", err)
+		log.Printf("failed to begin transaction %v", err)
 		return err
 	}
 
@@ -176,7 +176,7 @@ func (m *DBManager) SaveMetricBatch(metric logType) error {
 
 	if err != nil {
 		tx.Rollback()
-		log.Fatalf("failed to prepare copy: %v", err)
+		log.Printf("failed to prepare copy: %v", err)
 		return err
 	}
 	err = readFilesSaveToDb(metric, tx, stmt, m)
@@ -187,20 +187,20 @@ func (m *DBManager) SaveMetricBatch(metric logType) error {
 	_, err = stmt.Exec()
 	if err != nil {
 		tx.Rollback()
-		log.Fatalf("failed to flush copy statement: %v", err)
+		log.Printf("failed to flush copy statement: %v", err)
 		return err
 	}
 
 	err = stmt.Close()
 	if err != nil {
 		tx.Rollback()
-		log.Fatalf("failed to close statement %v", err)
+		log.Printf("failed to close statement %v", err)
 		return err
 	}
 
 	err = tx.Commit()
 	if err != nil {
-		log.Fatalf("failed to commit transaction %v", err)
+		log.Printf("failed to commit transaction %v", err)
 		return err
 	}
 

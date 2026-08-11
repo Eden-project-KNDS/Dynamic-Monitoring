@@ -12,11 +12,11 @@ func main() {
 	flag.Parse()
 
 	if *slurmPID == "" {
-		log.Fatal("Slurm PID not found")
+		log.Printf("Slurm PID not found")
 		return
 	}
 	if *accountName == "" {
-		log.Fatal("Account name not found")
+		log.Printf("Account name not found")
 		return
 	}
 

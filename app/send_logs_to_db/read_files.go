@@ -80,7 +80,7 @@ func parseGPULine(gpuLine *string) (*DBGpuTableEntry, error) {
 
 	parsedTime, err := time.Parse(layout, combinedString)
 	if err != nil {
-		log.Fatalf("Error parsing time %v ", err)
+		log.Printf("Error parsing time %v ", err)
 		return nil, err
 	}
 	dbRow.Time = parsedTime
@@ -117,7 +117,7 @@ func readCPUFile(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error
 
 		if err != nil {
 			tx.Rollback()
-			log.Fatalf("Error when buffering metrics: %v", err)
+			log.Printf("Error when buffering metrics: %v", err)
 			return err
 		}
 	}
