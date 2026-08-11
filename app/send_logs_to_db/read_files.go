@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -10,29 +11,28 @@ import (
 	"time"
 )
 
-func openFiles(slurmPID *string) (*os.File, *os.File, error) {
-	var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
-	var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"
+func openFile(slurmPID *string, metric logType) (*os.File, error) {
 
-	cpuFile, err := os.Open(cpuFileName)
-	if err != nil {
-		log.Fatalf("couldn't open cpu log file %v", err)
-		return nil, nil, err
+	var fileName string
+	if metric == CPUMetric {
+		fileName = "usage_cpu_ram_" + *slurmPID + ".log"
+	} else if metric == GPUMetric {
+		fileName = "usage_gpu_" + *slurmPID + ".log"
 	}
 
-	gpuFile, err := os.Open(gpuFileName)
+	file, err := os.Open(fileName)
 	if err != nil {
-		log.Fatalf("couldn't open gpu log file %v", err)
-		return nil, nil, err
+		log.Fatalf("couldn't open %v log file %v", metric, err)
+		return nil, err
 	}
-	return cpuFile, gpuFile, nil
+	return file, nil
 
 }
 
-func parseLine(cpuLine *string, gpuLine *string) (*DBEntry, error) {
-	dbRow := &DBEntry{}
+func parseCPULine(cpuLine *string) (*DBCpuTableEntry, error) {
+
+	dbRow := &DBCpuTableEntry{}
 	cpuLineSpilt := strings.Fields(*cpuLine)
-	gpuLineSplit := strings.Fields(*gpuLine)
 
 	var err error = nil
 
@@ -48,6 +48,25 @@ func parseLine(cpuLine *string, gpuLine *string) (*DBEntry, error) {
 	dbRow.VSZ, err = strconv.ParseFloat(cpuLineSpilt[12], 64)
 	dbRow.RSS, err = strconv.ParseFloat(cpuLineSpilt[13], 64)
 	dbRow.RamPercentage, err = strconv.ParseFloat(cpuLineSpilt[14], 64)
+
+	layout := "15:04:05"
+
+	parsedTime, err := time.Parse(layout, cpuLineSpilt[0])
+	if err != nil {
+		log.Fatalf("Error parsing time %v ", err)
+		return nil, err
+	}
+	dbRow.Time = parsedTime
+
+	return dbRow, nil
+
+}
+
+func parseGPULine(gpuLine *string) (*DBGpuTableEntry, error) {
+	dbRow := &DBGpuTableEntry{}
+	gpuLineSplit := strings.Fields(*gpuLine)
+
+	var err error = nil
 
 	dbRow.UtilizationGpuPercentage, err = strconv.ParseFloat(gpuLineSplit[2], 64)
 	dbRow.UtilizationGpuMemory, err = strconv.ParseFloat(gpuLineSplit[4], 64)
@@ -67,53 +86,85 @@ func parseLine(cpuLine *string, gpuLine *string) (*DBEntry, error) {
 	dbRow.Time = parsedTime
 
 	return dbRow, nil
-
 }
 
-func readFilesSaveToDb(accountName *string, slurmPID *string, tx *sql.Tx, stmt *sql.Stmt) error {
+func readCPUFile(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error {
 
-	cpuFile, gpuFile, err := openFiles(slurmPID)
+	cpuFile, err := openFile(m.slurmPID, metric)
 	if err != nil {
 		return err
 	}
 	defer cpuFile.Close()
-	defer gpuFile.Close()
 
 	cpuScanner := bufio.NewScanner(cpuFile)
-	gpuScanner := bufio.NewScanner(gpuFile)
-
 	// SKIP THE HEADERS ---
-
 	// Skip 2 header lines in the CPU log
 	cpuScanner.Scan()
 	cpuScanner.Scan()
 
-	// Skip 1 header line in the GPU log
-	gpuScanner.Scan()
-
-	for cpuScanner.Scan() && gpuScanner.Scan() {
+	for cpuScanner.Scan() {
 		cpuLine := cpuScanner.Text()
-		gpuLine := gpuScanner.Text()
 
-		dbRow, err := parseLine(&cpuLine, &gpuLine)
+		dbRow, err := parseCPULine(&cpuLine)
 		if err != nil {
 			return err
 		}
-		dbRow.Account = *accountName
-		dbRow.JobId = *slurmPID
+		dbRow.JobId = *m.slurmPID
 
-		_, err = stmt.Exec(dbRow.Time, dbRow.JobId, dbRow.Account, dbRow.PID, dbRow.UsrPercentage,
+		_, err = stmt.Exec(dbRow.JobId, dbRow.Time, dbRow.PID, dbRow.UsrPercentage,
 			dbRow.SystemPercentage, dbRow.GuestPercentage, dbRow.WaitPercentage, dbRow.CpuPercentage,
-			dbRow.Cpu, dbRow.MinfltsPerS, dbRow.MajfltsPerS, dbRow.VSZ, dbRow.RSS, dbRow.RamPercentage,
-			dbRow.UtilizationGpuPercentage, dbRow.UtilizationGpuMemory, dbRow.MemoryGpuUsedMib)
+			dbRow.Cpu, dbRow.MinfltsPerS, dbRow.MajfltsPerS, dbRow.VSZ, dbRow.RSS, dbRow.RamPercentage)
 
 		if err != nil {
 			tx.Rollback()
 			log.Fatalf("Error when buffering metrics: %v", err)
 			return err
 		}
+	}
+	return nil
+}
 
+func readGPUFile(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error {
+
+	gpuFile, err := openFile(m.slurmPID, metric)
+	if err != nil {
+		return err
+	}
+	defer gpuFile.Close()
+
+	gpuScanner := bufio.NewScanner(gpuFile)
+	// SKIP THE HEADERS ---
+	// Skip 2 header lines in the CPU log
+	gpuScanner.Scan()
+
+	for gpuScanner.Scan() {
+		cpuLine := gpuScanner.Text()
+
+		dbRow, err := parseGPULine(&cpuLine)
+		if err != nil {
+			return err
+		}
+		dbRow.JobId = *m.slurmPID
+
+		_, err = stmt.Exec(dbRow.JobId, dbRow.Time, dbRow.UtilizationGpuPercentage, dbRow.UtilizationGpuMemory, dbRow.MemoryGpuUsedMib)
+
+		if err != nil {
+			tx.Rollback()
+			log.Fatalf("Error when buffering metrics: %v", err)
+			return err
+		}
+	}
+	return nil
+
+}
+
+func readFilesSaveToDb(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error {
+
+	if metric == CPUMetric {
+		return readCPUFile(metric, tx, stmt, m)
+	} else if metric == GPUMetric {
+		return readGPUFile(metric, tx, stmt, m)
 	}
 
-	return nil
+	return errors.New("Wrong metric type")
 }

@@ -178,7 +178,7 @@ func (m *DBManager) SaveMetricBatch(metric logType) error {
 		log.Fatalf("failed to prepare copy: %v", err)
 		return err
 	}
-	err = readFilesSaveToDb(accountName, slurmPID, tx, stmt)
+	err = readFilesSaveToDb(metric, tx, stmt, m)
 	if err != nil {
 		return err
 	}
