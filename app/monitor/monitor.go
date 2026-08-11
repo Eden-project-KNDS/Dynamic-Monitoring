@@ -11,6 +11,8 @@ import (
 	"syscall"
 )
 
+const timeInterval string = "5"
+
 func main() {
 
 	cudaPID := flag.String("job-id", "", "PID of the process to monitor")
@@ -41,7 +43,7 @@ func main() {
 	}
 	defer usage_gpuFile.Close()
 
-	cpu_ram_cmd := exec.Command("pidstat", "-h", "-r", "-u", "-C", *programName, "1")
+	cpu_ram_cmd := exec.Command("pidstat", "-h", "-r", "-u", "-C", *programName, timeInterval)
 
 	stdout, err := cpu_ram_cmd.StdoutPipe()
 	if err != nil {
@@ -75,7 +77,7 @@ func main() {
 		}
 	}()
 
-	gpu_command := exec.Command("nvidia-smi", "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used", "--format=csv", "-l", "1")
+	gpu_command := exec.Command("nvidia-smi", "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used", "--format=csv", "-l", timeInterval)
 	gpu_command.Stdout = usage_gpuFile
 	gpu_command.Stderr = os.Stderr
 
