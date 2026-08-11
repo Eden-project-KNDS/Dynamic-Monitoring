@@ -6,6 +6,7 @@ This program reads CPU and GPU metric log files for a Slurm job and uploads them
 
 - A PostgreSQL server must already be running.
 - The target database must already exist before running the program.
+- The database must have TimescaleDB installed and enabled, because the program creates hypertables for `cpumetric` and `gpumetric`.
 - The connection settings in [main.go](main.go) must be updated for your environment. In particular, change the host/IP address in the connection string from `localhost` if your database is on another machine.
 - The program expects the log files to be present in the current working directory:
   - `usage_cpu_ram_<job-id>.log`
@@ -35,11 +36,18 @@ Example:
 ./eden-savelog --job-id 12345 --account myproject
 ```
 
-## Important notes
+## What it creates
 
-- The program uses the connection string in [main.go](main.go). Update `host`, `port`, `user`, `password`, and `dbname` as needed.
-- In the future it will be replace with .env file
-- If the database is remote, replace `localhost` with the correct IP address or hostname.
-- The program will create the `resource_metrics` table and a hypertable if they do not already exist.
-- After saving data to database program removes log files
+The program initializes these tables if they do not already exist:
+
+- `useraccount` — stores `job_id` and `account`
+- `cpumetric` — stores CPU log rows, with a hypertable on `time`
+- `gpumetric` — stores GPU log rows, with a hypertable on `time`
+
+## Notes
+
+- The connection string is hard-coded in [main.go](main.go). Update `host`, `port`, `user`, `password`, and `dbname` as needed.
+- If your database is remote, replace `localhost` with the correct host or IP address.
+- The program currently does not remove log files after saving, because the removal code is commented out in `main.go`.
+- If TimescaleDB is not available, the `create_hypertable` calls will fail.
   
