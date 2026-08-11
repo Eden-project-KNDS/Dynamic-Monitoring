@@ -31,13 +31,16 @@ func main() {
 	}
 	defer manager.DB.Close()
 
+	manager.accountName = accountName
+	manager.slurmPID = slurmPID
+
 	err = manager.InitDatabase()
 	if err != nil {
 		return
 	}
 	fmt.Println("Connection established")
 
-	err = manager.SaveMetricBatch(accountName, slurmPID)
+	err = manager.SaveMetricToDB()
 	if err != nil {
 		return
 	}
