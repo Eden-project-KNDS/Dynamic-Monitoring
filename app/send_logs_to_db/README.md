@@ -41,4 +41,5 @@ Example:
 - In the future it will be replace with .env file
 - If the database is remote, replace `localhost` with the correct IP address or hostname.
 - The program will create the `resource_metrics` table and a hypertable if they do not already exist.
+- After saving data to database program removes log files
   
