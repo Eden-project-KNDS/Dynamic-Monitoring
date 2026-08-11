@@ -40,6 +40,11 @@ func main() {
 	}
 	fmt.Println("Connection established")
 
+	err = manager.SaveMetricToDB()
+	if err != nil {
+		return
+	}
+
 	fmt.Println("successfully saved logs")
 	//var cpuFileName string = "usage_cpu_ram_" + *slurmPID + ".log"
 	//var gpuFileName string = "usage_gpu_" + *slurmPID + ".log"

@@ -16,6 +16,7 @@ type DBManager struct {
 	DB          *sql.DB
 	accountName *string
 	slurmPID    *string
+	ID          int64
 }
 
 type DBUserTableEntry struct {
@@ -23,7 +24,7 @@ type DBUserTableEntry struct {
 	Account string
 }
 type DBCpuTableEntry struct {
-	JobId            string
+	ID               int64
 	Time             time.Time
 	PID              string
 	UsrPercentage    float64
@@ -39,7 +40,7 @@ type DBCpuTableEntry struct {
 	RamPercentage    float64
 }
 type DBGpuTableEntry struct {
-	JobId                    string
+	ID                       int64
 	Time                     time.Time
 	UtilizationGpuPercentage float64
 	UtilizationGpuMemory     float64
@@ -72,16 +73,16 @@ func (m *DBManager) connect(connStr *string, driverType *string) error {
 
 func (m *DBManager) InitDatabase() error {
 	createUserTAble := `
-		CREATE TABLE IF NOT EXISTS UserAccount(
-			id BIGSERIAL UNIQUE,
-			job_id TEXT PRIMARY KEY,
+		CREATE TABLE IF NOT EXISTS useraccount(
+			id BIGSERIAL PRIMARY KEY,
+			job_id TEXT UNIQUE,
 			account TEXT
 			);
 	`
 
 	createCPUTable := `
-		CREATE TABLE IF NOT EXISTS CPUMetrics(
-			job_id TEXT NOT NULL REFERENCES UserAccount(job_id) ON DELETE CASCADE,
+		CREATE TABLE IF NOT EXISTS cpumetric(
+			id BIGSERIAL NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
 			time TIMESTAMPTZ NOT NULL,
 			pid TEXT,
 			usr_percentage DOUBLE PRECISION,
@@ -100,8 +101,8 @@ func (m *DBManager) InitDatabase() error {
 	`
 
 	createGPUTable := `
-		CREATE TABLE IF NOT EXISTS GPUMetric(
-		job_id TEXT NOT NULL REFERENCES UserAccount(job_id) ON DELETE CASCADE,
+		CREATE TABLE IF NOT EXISTS gpumetric(
+		id BIGSERIAL NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
 		time TIMESTAMPTZ NOT NULL,
 		utilization_gpu_percentage DOUBLE PRECISION,
 			utilization_gpu_memory DOUBLE PRECISION,
@@ -125,19 +126,19 @@ func (m *DBManager) InitDatabase() error {
 		return err
 	}
 
-	createHypertableQuery := `
-		SELECT create_hypertable('GPUMetric', 'time', if_not_exists => TRUE);
+	createHypertableQueryGPU := `
+		SELECT create_hypertable('gpumetric', 'time', if_not_exists => TRUE);
 	`
-	_, err = m.DB.Exec(createHypertableQuery)
+	_, err = m.DB.Exec(createHypertableQueryGPU)
 	if err != nil {
 		log.Fatalf("failed to create on GPU hypertable: %v", err)
 		return err
 	}
 
-	createHypertableQuery = `
-		SELECT create_hypertable('CPUMetric', 'time', if_not_exists => TRUE);
+	createHypertableQueryCPU := `
+		SELECT create_hypertable('cpumetric', 'time', if_not_exists => TRUE);
 	`
-	_, err = m.DB.Exec(createHypertableQuery)
+	_, err = m.DB.Exec(createHypertableQueryCPU)
 	if err != nil {
 		log.Fatalf("failed to create on CPU hypertable: %v", err)
 		return err
@@ -149,13 +150,13 @@ func (m *DBManager) InitDatabase() error {
 func (m *DBManager) PrepareTx(metric logType, tx *sql.Tx) (*sql.Stmt, error) {
 
 	if metric == GPUMetric {
-		stmt, err := tx.Prepare(pq.CopyIn("GPUMetric", "job_id", "time",
+		stmt, err := tx.Prepare(pq.CopyIn("gpumetric", "job_id", "time",
 			"utilization_gpu_percentage", "utilization_gpu_memory", "memory_gpu_used_mib"))
 
 		return stmt, err
 	} else if metric == CPUMetric {
-		stmt, err := tx.Prepare(pq.CopyIn("CPUMetrics", "job_id", "time",
-			"account", "pid", "usr_percentage", "system_percentage", "guest_percentage", "wait_percentage", "cpu_percentage", "cpu",
+		stmt, err := tx.Prepare(pq.CopyIn("cpumetric", "job_id", "time",
+			"pid", "usr_percentage", "system_percentage", "guest_percentage", "wait_percentage", "cpu_percentage", "cpu",
 			"minflts_per_s", "majflts_per_s", "vsz", "rss", "ram_percentage"))
 
 		return stmt, err
@@ -207,10 +208,10 @@ func (m *DBManager) SaveMetricBatch(metric logType) error {
 
 }
 
-func (m *DBManager) SaveRowToUserTable() error {
+func (m *DBManager) SaveRowToUserTable() (int64, error) {
 
 	query := `
-	INSERT INTO UserAccount(job_id, account)
+	INSERT INTO "useraccount"(job_id, account)
 	VALUES ($1, $2)
 	RETURNING id;`
 
@@ -223,23 +224,27 @@ func (m *DBManager) SaveRowToUserTable() error {
 
 	if err != nil {
 		log.Printf("Error saving User data to the database: %v \n", err)
-		return err
+		return 0, err
 	}
 
-	return nil
+	return insertedID, nil
 }
 
 func (m *DBManager) SaveMetricToDB() error {
-	const METRIC_SIZE int = 3
+	fmt.Println("Started saving metrics to DB")
+	const METRIC_SIZE int = 2
 
 	errChan := make(chan error, METRIC_SIZE)
 
-	go func() {
-		errChan <- m.SaveRowToUserTable()
-	}()
+	id, err := m.SaveRowToUserTable()
+	if err != nil {
+		return err
+	}
+	m.ID = id
 	go func() {
 		errChan <- m.SaveMetricBatch(GPUMetric)
 	}()
+
 	go func() {
 		errChan <- m.SaveMetricBatch(CPUMetric)
 	}()

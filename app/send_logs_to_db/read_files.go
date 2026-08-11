@@ -109,9 +109,9 @@ func readCPUFile(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error
 		if err != nil {
 			return err
 		}
-		dbRow.JobId = *m.slurmPID
+		dbRow.ID = m.ID
 
-		_, err = stmt.Exec(dbRow.JobId, dbRow.Time, dbRow.PID, dbRow.UsrPercentage,
+		_, err = stmt.Exec(dbRow.ID, dbRow.Time, dbRow.PID, dbRow.UsrPercentage,
 			dbRow.SystemPercentage, dbRow.GuestPercentage, dbRow.WaitPercentage, dbRow.CpuPercentage,
 			dbRow.Cpu, dbRow.MinfltsPerS, dbRow.MajfltsPerS, dbRow.VSZ, dbRow.RSS, dbRow.RamPercentage)
 
@@ -144,9 +144,9 @@ func readGPUFile(metric logType, tx *sql.Tx, stmt *sql.Stmt, m *DBManager) error
 		if err != nil {
 			return err
 		}
-		dbRow.JobId = *m.slurmPID
+		dbRow.ID = m.ID
 
-		_, err = stmt.Exec(dbRow.JobId, dbRow.Time, dbRow.UtilizationGpuPercentage, dbRow.UtilizationGpuMemory, dbRow.MemoryGpuUsedMib)
+		_, err = stmt.Exec(dbRow.ID, dbRow.Time, dbRow.UtilizationGpuPercentage, dbRow.UtilizationGpuMemory, dbRow.MemoryGpuUsedMib)
 
 		if err != nil {
 			tx.Rollback()
