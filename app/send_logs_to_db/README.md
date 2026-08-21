@@ -48,6 +48,5 @@ The program initializes these tables if they do not already exist:
 
 - The connection string is hard-coded in [main.go](main.go). Update `host`, `port`, `user`, `password`, and `dbname` as needed.
 - If your database is remote, replace `localhost` with the correct host or IP address.
-- The program currently does not remove log files after saving, because the removal code is commented out in `main.go`.
 - If TimescaleDB is not available, the `create_hypertable` calls will fail.
   
