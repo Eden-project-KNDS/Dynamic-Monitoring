@@ -82,7 +82,7 @@ func (m *DBManager) InitDatabase() error {
 
 	createCPUTable := `
 		CREATE TABLE IF NOT EXISTS cpumetric(
-			id BIGSERIAL NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
+			job_ref BIGINT NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
 			time TIMESTAMPTZ NOT NULL,
 			pid TEXT,
 			usr_percentage DOUBLE PRECISION,
@@ -102,7 +102,7 @@ func (m *DBManager) InitDatabase() error {
 
 	createGPUTable := `
 		CREATE TABLE IF NOT EXISTS gpumetric(
-		id BIGSERIAL NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
+		job_ref BIGINT NOT NULL REFERENCES useraccount(id) ON DELETE CASCADE,
 		time TIMESTAMPTZ NOT NULL,
 		utilization_gpu_percentage DOUBLE PRECISION,
 			utilization_gpu_memory DOUBLE PRECISION,
@@ -150,12 +150,12 @@ func (m *DBManager) InitDatabase() error {
 func (m *DBManager) PrepareTx(metric logType, tx *sql.Tx) (*sql.Stmt, error) {
 
 	if metric == GPUMetric {
-		stmt, err := tx.Prepare(pq.CopyIn("gpumetric", "job_id", "time",
+		stmt, err := tx.Prepare(pq.CopyIn("gpumetric", "job_ref", "time",
 			"utilization_gpu_percentage", "utilization_gpu_memory", "memory_gpu_used_mib"))
 
 		return stmt, err
 	} else if metric == CPUMetric {
-		stmt, err := tx.Prepare(pq.CopyIn("cpumetric", "job_id", "time",
+		stmt, err := tx.Prepare(pq.CopyIn("cpumetric", "job_ref", "time",
 			"pid", "usr_percentage", "system_percentage", "guest_percentage", "wait_percentage", "cpu_percentage", "cpu",
 			"minflts_per_s", "majflts_per_s", "vsz", "rss", "ram_percentage"))
 
