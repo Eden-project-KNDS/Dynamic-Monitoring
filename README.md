@@ -137,4 +137,6 @@ The `.gitignore` excludes the following — never force-add these:
 
 ## Documentation (TODO: partially done)
 
+- [Database schema](docs/database.md) — tables, relationships, data flow and example queries
+
 ---
