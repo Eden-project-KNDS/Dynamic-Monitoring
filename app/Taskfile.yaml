@@ -27,5 +27,7 @@ tasks:
 
   build:
     desc: "Kompiluje demona monitorującego zasoby Slurma"
+    env:
+      CGO_CFLAGS: "-Wno-deprecated-declarations"
     cmds:
       - go build -o slurm-cgroup-monitor .
