@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+tasks:
+  default:
+    desc: "Uruchamia formatowanie i linter"
+    cmds:
+      - task: fmt
+      - task: lint
+
+  fmt:
+    desc: "Formatuje kod Go przy użyciu gofmt i goimports"
+    cmds:
+      - go fmt ./...
+      - goimports -w .
+
+  lint:
+    desc: "Uruchamia linter do sprawdzania jakości i błędów w kodzie"
+    cmds:
+      - golangci-lint run
+
+  test:
+    desc: "Uruchamia wszystkie testy jednostkowe"
+    cmds:
+      - go test -v ./...
+
+  build:
+    desc: "Kompiluje demona monitorującego zasoby Slurma"
+    cmds:
+      - go build -o slurm-cgroup-monitor .
