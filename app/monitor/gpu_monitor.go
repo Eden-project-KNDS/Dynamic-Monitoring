@@ -9,7 +9,7 @@ import (
 )
 
 // fix change to ENV
-const TimeIntervalGPU int = 15
+const TimeIntervalGPU int = 5
 
 func getGPUCount() int {
 
@@ -82,7 +82,7 @@ func (m gpuMonitor) start(gpuCount int) {
 
 		case t := <-ticker.C:
 			{
-				fmt.Printf("%s", t.Format("2006-01-02 15:04:05"))
+				fmt.Printf("%s\n", t.Format("2006-01-02 15:04:05"))
 				for i := 0; i < gpuCount; i++ {
 					util, retUtil := m.devices[i].GetUtilizationRates()
 					mem, retMem := m.devices[i].GetMemoryInfo()

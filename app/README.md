@@ -1,9 +1,7 @@
 Przeczytaj /Documentation po szczególy 
 
-Build system to Taskfile.yaml : https://taskfile.dev/docs/
-Jak go użyć go-task build albo task build zależy od systemu
+Budujemy Makefilem
 
-
-Wspólne formatowanie przy użyciu go-task fmt
+Wspólne formatowanie przy użyciu fmt
 
 To do lepsza dokumentacja i po ang
