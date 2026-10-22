@@ -1,5 +1,5 @@
-module myapp
+module slurm-monitor
 
-go 1.26.5
+go 1.27.2
 
-require github.com/lib/pq v1.12.3 // indirect
+require github.com/NVIDIA/go-nvml v0.13.4-1

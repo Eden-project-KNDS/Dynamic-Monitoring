@@ -21,3 +21,4 @@ app/monitor/test/pidstat
 *.out
 eden-monitor
 eden-savelog
+slurm-cgroup-monitor
