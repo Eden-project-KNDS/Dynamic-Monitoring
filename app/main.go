@@ -4,7 +4,9 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"slurm-monitor/exporter"
 	monitor "slurm-monitor/monitor"
 )
 
@@ -15,7 +17,10 @@ func main() {
 
 	monitor.StartMonitoring()
 
-	http.Handle("/metrics", promhttp.Handler())
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(exporter.NewCollector(exporter.FakeSource{}))
+
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	err := http.ListenAndServe(listenAddress, nil)
 	log.Fatal(err)
