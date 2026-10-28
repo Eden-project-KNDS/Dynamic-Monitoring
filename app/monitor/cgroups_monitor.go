@@ -45,7 +45,7 @@ func getJobId(folderName string) string {
 	return folderName[4:]
 }
 
-func get_new_jobs(JobCache map[string]jobData, nodeName string) {
+func getNewJobs(JobCache map[string]jobData, nodeName string) {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
@@ -84,6 +84,27 @@ func get_new_jobs(JobCache map[string]jobData, nodeName string) {
 
 }
 
+func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]int32, JobMetrics map[string]cpuMetrics) {
+
+	for jobId, _ := range JobCache {
+		_, err := os.Stat(PATH + PATTERN + jobId)
+		if err != nil { // file doesn't exist -> clearing maps
+			fmt.Printf("Job %s is not longer valid\n", jobId)
+			delete(JobPID, jobId)
+			delete(JobMetrics, jobId)
+			delete(JobCache, jobId)
+		}
+	}
+}
+
+func getAllPidsFromJob(JobPID map[string][]int32) {
+
+	//for jobId, currentPids := range JobPID {
+
+	//}
+
+}
+
 // parseScontrolValue wyciąga wartość klucza w formacie Key=Value z wyjścia scontrol
 func parseScontrolValue(input, key string) string {
 	re := regexp.MustCompile(fmt.Sprintf(`\b%s=([^\s]+)`, regexp.QuoteMeta(key)))
@@ -98,9 +119,10 @@ func initCPUMonitor(nodeName string) {
 
 	fmt.Println("Init CPU Monitoring")
 
+	// key is job_id number to search for a dir need to add PATTERN
 	JobCache := make(map[string]jobData)
-	//JobPid := make(map[string][]int32)
-	//JobMetrics := make(map[string]cpuMetrics)
+	JobPid := make(map[string][]int32)
+	JobMetrics := make(map[string]cpuMetrics)
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -112,7 +134,11 @@ func initCPUMonitor(nodeName string) {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				get_new_jobs(JobCache, nodeName)
+				fmt.Printf("Size of JobCache : %d\n", len(JobCache))
+
+				getNewJobs(JobCache, nodeName)
+				clearOldJobs(JobCache, JobPid, JobMetrics)
+				getAllPidsFromJob(JobPid)
 
 			}
 		}
