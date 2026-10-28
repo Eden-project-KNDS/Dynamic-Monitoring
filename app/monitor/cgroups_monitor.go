@@ -57,8 +57,8 @@ func get_new_jobs(JobCache map[string]jobData) {
 func initCPUMonitor() {
 
 	JobCache := make(map[string]jobData)
-	JobPid := make(map[string][]int32)
-	JobMetrics := make(map[string]cpuMetrics)
+	//JobPid := make(map[string][]int32)
+	//JobMetrics := make(map[string]cpuMetrics)
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -70,7 +70,7 @@ func initCPUMonitor() {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				get_new_jobs(&JobCache)
+				get_new_jobs(JobCache)
 
 			}
 		}
