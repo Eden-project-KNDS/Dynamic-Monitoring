@@ -3,9 +3,11 @@ package monitor
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -84,7 +86,7 @@ func getNewJobs(JobCache map[string]jobData, nodeName string) {
 
 }
 
-func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]int32, JobMetrics map[string]cpuMetrics) {
+func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]uint32, JobMetrics map[string]cpuMetrics) {
 
 	for jobId, _ := range JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
@@ -97,11 +99,48 @@ func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]int32, JobMet
 	}
 }
 
-func getAllPidsFromJob(JobPID map[string][]int32) {
+func getAllPids(jobId string) []uint32 {
+	var pids []uint32
 
-	//for jobId, currentPids := range JobPID {
+	jobDir := PATH + PATTERN + jobId
 
-	//}
+	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == "cgroups.procs" {
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				fmt.Printf("Something went wrong when getting file with pids for job %s\n", jobId)
+				return nil
+			}
+			var currentPid uint32 = 0
+			for _, b := range data {
+				if b >= '0' && b <= '9' {
+					currentPid = currentPid*10 + uint32(b-'0')
+				} else if b == '\n' && currentPid > 0 {
+					pids = append(pids, currentPid)
+					currentPid = 0
+				}
+			}
+			if currentPid > 0 {
+				pids = append(pids, currentPid)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Printf("Something went wrong when getting pids for job %s\n", jobId)
+		return nil
+	}
+	return pids
+}
+
+func getAllPidsFromJob(JobPID map[string][]uint32) {
+
+	fmt.Println("Looking for PIDS")
+	for jobId, _ := range JobPID {
+		JobPID[jobId] = getAllPids(jobId)
+		fmt.Printf("PIDS from JOB %s:\n%v ", jobId, JobPID[jobId])
+	}
 
 }
 
@@ -121,7 +160,7 @@ func initCPUMonitor(nodeName string) {
 
 	// key is job_id number to search for a dir need to add PATTERN
 	JobCache := make(map[string]jobData)
-	JobPid := make(map[string][]int32)
+	JobPid := make(map[string][]uint32)
 	JobMetrics := make(map[string]cpuMetrics)
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
