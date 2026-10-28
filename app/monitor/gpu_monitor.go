@@ -9,7 +9,7 @@ import (
 )
 
 // fix change to ENV
-const TimeIntervalGPU int = 5
+
 
 func getGPUCount() int {
 
@@ -72,7 +72,7 @@ func initGPUMonitoring() {
 
 func (m gpuMonitor) start(gpuCount int) {
 
-	ticker := time.NewTicker(time.Duration(TimeIntervalGPU) * time.Second)
+	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
 
 	for {
