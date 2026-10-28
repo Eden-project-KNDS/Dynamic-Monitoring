@@ -17,8 +17,9 @@ func main() {
 
 	monitor.StartMonitoring()
 
+	fake := exporter.FakeSource{}
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(exporter.NewCollector(exporter.FakeSource{}))
+	reg.MustRegister(exporter.NewCollector(fake, fake))
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
