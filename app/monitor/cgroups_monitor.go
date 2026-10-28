@@ -1,10 +1,12 @@
 package monitor
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -38,23 +40,63 @@ func keyExists(m map[string]jobData, key string) bool {
 	return ok
 }
 
-func get_new_jobs(JobCache map[string]jobData) {
+// this function assumes that folderName starts with job_ prefix
+func getJobId(folderName string) string {
+	return folderName[4:]
+}
+
+func get_new_jobs(JobCache map[string]jobData, nodeName string) {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
-		log.Fatalln("Something went wrong when reading cgroups")
+		log.Println("Something went wrong when reading cgroups")
 		return
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(JobCache, entry.Name()) {
-			filepath.Join(PATH, entry.Name())
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(JobCache, getJobId(entry.Name())) {
+			jobId := getJobId(entry.Name())
+			cmd := exec.Command("scontrol", "show", "job", jobId)
+			var out bytes.Buffer
+			cmd.Stdout = &out
 
+			err := cmd.Run()
+			if err != nil {
+				log.Printf("Error getting scrontrol data from job : %s", jobId)
+				continue
+			}
+
+			meta := jobData{node: nodeName}
+			output := out.String()
+			rawUser := parseScontrolValue(output, "UserId")
+
+			if idx := strings.Index(rawUser, "("); idx != -1 {
+				meta.user = rawUser[:idx]
+			} else {
+				meta.user = rawUser
+			}
+
+			JobCache[jobId] = meta
+
+			fmt.Printf("Found new job: %s USER: %s\n", jobId, meta.user)
 		}
 	}
 
 }
-func initCPUMonitor() {
+
+// parseScontrolValue wyciąga wartość klucza w formacie Key=Value z wyjścia scontrol
+func parseScontrolValue(input, key string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`\b%s=([^\s]+)`, regexp.QuoteMeta(key)))
+	matches := re.FindStringSubmatch(input)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return "unknown"
+}
+
+func initCPUMonitor(nodeName string) {
+
+	fmt.Println("Init CPU Monitoring")
 
 	JobCache := make(map[string]jobData)
 	//JobPid := make(map[string][]int32)
@@ -70,7 +112,7 @@ func initCPUMonitor() {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				get_new_jobs(JobCache)
+				get_new_jobs(JobCache, nodeName)
 
 			}
 		}

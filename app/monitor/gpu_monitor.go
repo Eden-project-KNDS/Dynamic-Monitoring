@@ -10,12 +10,11 @@ import (
 
 // fix change to ENV
 
-
 func getGPUCount() int {
 
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
-		log.Fatalf("Unable to get device count: %v", nvml.ErrorString(ret))
+		log.Printf("Unable to get device count: %v", nvml.ErrorString(ret))
 		return 0
 	}
 
@@ -37,18 +36,18 @@ type gpuMonitor struct {
 	metrics []gpuMetrics
 }
 
-func initGPUMonitoring() {
+func initGPUMonitoring(nodeName string) {
 	ret := nvml.Init()
 
 	if ret != nvml.SUCCESS {
-		log.Fatalf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
+		log.Printf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
 		return
 	}
 
 	defer func() {
 		ret := nvml.Shutdown()
 		if ret != nvml.SUCCESS {
-			log.Fatalf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
+			log.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
 		}
 	}()
 
@@ -63,7 +62,7 @@ func initGPUMonitoring() {
 		device, ret := nvml.DeviceGetHandleByIndex(i)
 
 		if ret != nvml.SUCCESS {
-			log.Fatalf("Unable to get device at index %d: %v", i, nvml.ErrorString(ret))
+			log.Printf("Unable to get device at index %d: %v", i, nvml.ErrorString(ret))
 		}
 		newGPUMonitor.devices[i] = device
 	}
