@@ -1,6 +1,7 @@
 package monitor
 
 func StartMonitoring() {
-	initGPUMonitoring()
+	go initGPUMonitoring()
+	go initCPUMonitor()
 
 }
