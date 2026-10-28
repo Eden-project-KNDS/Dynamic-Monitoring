@@ -23,10 +23,10 @@ type cpuMetrics struct {
 	throttledUsec uint64
 }
 
-func initCPUMonitor() {
+// func initCPUMonitor() {
 
-	JobCache := make(map[string]jobData)
-	JobPid := make(map[string][]int32)
-	JobMetrics := make(map[string]cpuMetrics)
+// 	JobCache := make(map[string]jobData)
+// 	JobPid := make(map[string][]int32)
+// 	JobMetrics := make(map[string]cpuMetrics)
 
-}
+// }
