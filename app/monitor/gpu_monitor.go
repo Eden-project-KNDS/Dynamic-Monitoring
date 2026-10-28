@@ -41,14 +41,14 @@ func initGPUMonitoring() {
 	ret := nvml.Init()
 
 	if ret != nvml.SUCCESS {
-		log.Fatalf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
+		log.Printf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
 		return
 	}
 
 	defer func() {
 		ret := nvml.Shutdown()
 		if ret != nvml.SUCCESS {
-			log.Fatalf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
+			log.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
 		}
 	}()
 
