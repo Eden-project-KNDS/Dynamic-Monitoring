@@ -6,4 +6,5 @@ type GPUStat struct {
 	UUID        string
 	UtilPercent uint32 // 0-100
 	JobID       string // "" = card not allocated to any job
+	MemoryUsed  uint64
 }
