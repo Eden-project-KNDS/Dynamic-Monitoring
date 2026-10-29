@@ -1,7 +1,9 @@
 package monitor
 
-func StartMonitoring() {
-	go initGPUMonitoring()
-	go initCPUMonitor()
+const TimeInterval int = 5
+
+func StartMonitoring(nodeName string) {
+	//go initGPUMonitoring(nodeName)
+	initCPUMonitor(nodeName)
 
 }

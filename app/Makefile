@@ -15,7 +15,10 @@ lint:
 # Uruchamia wszystkie testy jednostkowe
 test:
 	go test -v ./...
+run: build
+	./slurm-cgroup-monitor gpunode3
 
 # Kompiluje demona monitorującego zasoby Slurma (z wyciszeniem ostrzeżeń CGO)
 build:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go build -o slurm-cgroup-monitor .
+
