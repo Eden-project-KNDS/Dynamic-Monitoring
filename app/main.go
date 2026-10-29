@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const listenAddress = ":9840"
+
 func usage(program string) {
 	fmt.Printf("Program %s takes 1 arg, node name\n  How to run: ./%s node_name", program, program)
 
