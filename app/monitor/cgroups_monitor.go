@@ -177,7 +177,7 @@ func initCPUMonitor(nodeName string) {
 
 				getNewJobs(JobCache, nodeName)
 				clearOldJobs(JobCache, JobPid, JobMetrics)
-				getAllPidsFromJob(JobPid)
+				//getAllPidsFromJob(JobPid) has a bug
 
 			}
 		}
