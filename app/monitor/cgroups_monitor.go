@@ -154,14 +154,34 @@ func parseScontrolValue(input, key string) string {
 	return "unknown"
 }
 
-func initCPUMonitor(nodeName string) {
+func getCPUData(nodeName string, flag int) []JobStat {
 
-	fmt.Println("Init CPU Monitoring")
+	var jobStats []JobStat = make([]JobStat, 0)
 
 	// key is job_id number to search for a dir need to add PATTERN
 	JobCache := make(map[string]jobData)
 	JobPid := make(map[string][]uint32)
 	JobMetrics := make(map[string]cpuMetrics)
+
+	fmt.Printf("Size of JobCache : %d\n", len(JobCache))
+
+	getNewJobs(JobCache, nodeName)
+	clearOldJobs(JobCache, JobPid, JobMetrics)
+	//getAllPidsFromJob(JobPid) has a bug
+
+	if flag == 1 {
+		return jobStats
+	}
+	return nil
+}
+
+func Jobs() []JobStat {
+	return getCPUData("gpunode3", 1)
+}
+
+func initCPUMonitor(nodeName string) {
+
+	fmt.Println("Init CPU Monitoring")
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -173,12 +193,7 @@ func initCPUMonitor(nodeName string) {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				fmt.Printf("Size of JobCache : %d\n", len(JobCache))
-
-				getNewJobs(JobCache, nodeName)
-				clearOldJobs(JobCache, JobPid, JobMetrics)
-				//getAllPidsFromJob(JobPid) has a bug
-
+				getCPUData(nodeName, 0)
 			}
 		}
 	}
