@@ -53,7 +53,7 @@ func getJobId(folderName string) string {
 	return folderName[4:]
 }
 
-func getNewJobs(JobCache map[string]jobData, nodeName string) {
+func (jobs allJobs) getNewJobs(nodeName string) {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
@@ -62,7 +62,7 @@ func getNewJobs(JobCache map[string]jobData, nodeName string) {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(JobCache, getJobId(entry.Name())) {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(jobs.JobCache, getJobId(entry.Name())) {
 			jobId := getJobId(entry.Name())
 			cmd := exec.Command("scontrol", "show", "job", jobId)
 			var out bytes.Buffer
@@ -84,23 +84,24 @@ func getNewJobs(JobCache map[string]jobData, nodeName string) {
 				meta.user = rawUser
 			}
 
-			JobCache[jobId] = meta
-
+			jobs.JobCache[jobId] = meta
+			jobs.JobPid[jobId] = []uint32{}
+			jobs.JobMetrics[jobId] = cpuMetrics{}
 			fmt.Printf("Found new job: %s USER: %s\n", jobId, meta.user)
 		}
 	}
 
 }
 
-func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]uint32, JobMetrics map[string]cpuMetrics) {
+func (jobs allJobs) clearOldJobs() {
 
-	for jobId, _ := range JobCache {
+	for jobId, _ := range jobs.JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
 		if err != nil { // file doesn't exist -> clearing maps
 			fmt.Printf("Job %s is not longer valid\n", jobId)
-			delete(JobPID, jobId)
-			delete(JobMetrics, jobId)
-			delete(JobCache, jobId)
+			delete(jobs.JobPid, jobId)
+			delete(jobs.JobMetrics, jobId)
+			delete(jobs.JobCache, jobId)
 		}
 	}
 }
@@ -111,7 +112,7 @@ func getAllPids(jobId string) []uint32 {
 	jobDir := PATH + PATTERN + jobId
 
 	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "cgroups.procs" {
+		if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
 			data, readErr := os.ReadFile(path)
 			if readErr != nil {
 				fmt.Printf("Something went wrong when getting file with pids for job %s\n", jobId)
@@ -140,12 +141,12 @@ func getAllPids(jobId string) []uint32 {
 	return pids
 }
 
-func getAllPidsFromJob(JobPID map[string][]uint32) {
+func (jobs allJobs) getAllPidsFromJob() {
 
 	fmt.Println("Looking for PIDS")
-	for jobId, _ := range JobPID {
-		JobPID[jobId] = getAllPids(jobId)
-		fmt.Printf("PIDS from JOB %s:\n%v ", jobId, JobPID[jobId])
+	for jobId, _ := range jobs.JobPid {
+		jobs.JobPid[jobId] = getAllPids(jobId)
+		fmt.Printf("PIDS from JOB %s:%v \n", jobId, jobs.JobPid[jobId])
 	}
 
 }
@@ -166,9 +167,9 @@ func (jobs allJobs) getCPUData(nodeName string, flag int) []JobStat {
 
 	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
-	getNewJobs(jobs.JobCache, nodeName)
-	clearOldJobs(jobs.JobCache, jobs.JobPid, jobs.JobMetrics)
-	getAllPidsFromJob(jobs.JobPid)
+	jobs.getNewJobs(nodeName)
+	jobs.clearOldJobs()
+	jobs.getAllPidsFromJob()
 
 	if flag == 1 {
 		return jobStats
