@@ -37,6 +37,12 @@ type cpuMetrics struct {
 	throttledUsec uint64
 }
 
+type allJobs struct {
+	JobCache   map[string]jobData
+	JobPid     map[string][]uint32
+	JobMetrics map[string]cpuMetrics
+}
+
 func keyExists(m map[string]jobData, key string) bool {
 	_, ok := m[key]
 	return ok
@@ -154,20 +160,15 @@ func parseScontrolValue(input, key string) string {
 	return "unknown"
 }
 
-func getCPUData(nodeName string, flag int) []JobStat {
+func (jobs allJobs) getCPUData(nodeName string, flag int) []JobStat {
 
 	var jobStats []JobStat = make([]JobStat, 0)
 
-	// key is job_id number to search for a dir need to add PATTERN
-	JobCache := make(map[string]jobData)
-	JobPid := make(map[string][]uint32)
-	JobMetrics := make(map[string]cpuMetrics)
+	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
-	fmt.Printf("Size of JobCache : %d\n", len(JobCache))
-
-	getNewJobs(JobCache, nodeName)
-	clearOldJobs(JobCache, JobPid, JobMetrics)
-	//getAllPidsFromJob(JobPid) has a bug
+	getNewJobs(jobs.JobCache, nodeName)
+	clearOldJobs(jobs.JobCache, jobs.JobPid, jobs.JobMetrics)
+	getAllPidsFromJob(jobs.JobPid)
 
 	if flag == 1 {
 		return jobStats
@@ -175,13 +176,21 @@ func getCPUData(nodeName string, flag int) []JobStat {
 	return nil
 }
 
-func Jobs() []JobStat {
-	return getCPUData("gpunode3", 1)
+func (jobs allJobs) Jobs() []JobStat {
+	return jobs.getCPUData("gpunode3", 1)
 }
 
 func initCPUMonitor(nodeName string) {
 
 	fmt.Println("Init CPU Monitoring")
+
+	//stwórz strukta i jego pola
+	// key is job_id number to search for a dir need to add PATTERN
+	var jobs allJobs = allJobs{
+		JobCache:   make(map[string]jobData),
+		JobPid:     make(map[string][]uint32),
+		JobMetrics: make(map[string]cpuMetrics),
+	}
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -193,7 +202,7 @@ func initCPUMonitor(nodeName string) {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				getCPUData(nodeName, 0)
+				jobs.getCPUData(nodeName, 0)
 			}
 		}
 	}
