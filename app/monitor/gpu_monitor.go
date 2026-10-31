@@ -37,24 +37,17 @@ type gpuMonitor struct {
 	metrics  []gpuMetrics
 }
 
-func initGPUMonitoring(nodeName string) {
+func NewGPUMonitor() *gpuMonitor {
 	ret := nvml.Init()
 
 	if ret != nvml.SUCCESS {
 		log.Printf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
-		return
+		return &gpuMonitor{}
 	}
-
-	defer func() {
-		ret := nvml.Shutdown()
-		if ret != nvml.SUCCESS {
-			log.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
-		}
-	}()
 
 	gpuCount := getGPUCount()
 	if gpuCount == 0 {
-		return
+		return &gpuMonitor{}
 	}
 
 	newGPUMonitor := gpuMonitor{gpuCount, make([]nvml.Device, gpuCount), make([]gpuMetrics, gpuCount)}
@@ -64,10 +57,11 @@ func initGPUMonitoring(nodeName string) {
 
 		if ret != nvml.SUCCESS {
 			log.Printf("Unable to get device at index %d: %v", i, nvml.ErrorString(ret))
+			return &gpuMonitor{}
 		}
 		newGPUMonitor.devices[i] = device
 	}
-	newGPUMonitor.start(gpuCount)
+	return &newGPUMonitor
 }
 
 // flag 0 print on terminal flag 1 send to prometheus
@@ -106,10 +100,12 @@ func (m gpuMonitor) getGpuStats(flag int) []GPUStat {
 			fmt.Printf("  Power Usage:  %.2f W\n\n", m.metrics[i].powerWatts)
 		} else if flag == 1 {
 			gpuStats[i].Index = i
-			gpuStats[i].UUID = "dummy"
+			if uuid, ret := m.devices[i].GetUUID(); ret == nvml.SUCCESS {
+				gpuStats[i].UUID = uuid
+			}
 			gpuStats[i].UtilPercent = m.metrics[i].coreUtilPercent
-			gpuStats[i].JobID = "dummy"
-			gpuStats[i].MemoryUsed = m.metrics[i].memoryUsedMB
+			gpuStats[i].JobID = ""
+			gpuStats[i].MemoryUsed = m.metrics[i].memoryUsedMB * 1024 * 1024 // For proper display in Grafana
 
 		}
 	}
@@ -143,4 +139,14 @@ func (m gpuMonitor) start(gpuCount int) {
 		}
 	}
 
+}
+
+// Close releases NVML. Call it once, when the program shuts down.
+func (m *gpuMonitor) Close() {
+	if m.gpuCount == 0 {
+		return
+	}
+	if ret := nvml.Shutdown(); ret != nvml.SUCCESS {
+		log.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
+	}
 }
