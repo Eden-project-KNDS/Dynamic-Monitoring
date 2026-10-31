@@ -225,8 +225,32 @@ func (jobs *allJobs) getCPUData(nodeName string, flag int) []JobStat {
 	return nil
 }
 
+// Jobs returns the jobs found by the discovery loop, with usage read from cgroup right now (on every scrape).
 func (jobs *allJobs) Jobs() []JobStat {
-	return jobs.getCPUData("gpunode3", 1)
+	jobs.mu.RLock()
+	defer jobs.mu.RUnlock()
+
+	stats := make([]JobStat, 0, len(jobs.JobCache))
+	for jobId, meta := range jobs.JobCache {
+		dir := PATH + PATTERN + jobId + "/"
+		if _, err := os.Stat(dir); err != nil {
+			continue // the job has just ended, the loop will remove it soon
+		}
+
+		stats = append(stats, JobStat{
+			JobID:         jobId,
+			User:          meta.user,
+			Account:       meta.account,
+			Partition:     meta.partition,
+			Name:          meta.name,
+			CPUsAllocated: meta.cpus,
+			CPUUsageUsec:  readStatValue(dir+"cpu.stat", "usage_usec"),
+			MemoryCurrent: readUint(dir + "memory.current"),
+			MemoryPeak:    readUint(dir + "memory.peak"),
+			MemoryLimit:   readUint(dir + "memory.max"),
+		})
+	}
+	return stats
 }
 
 // key is job_id number to search for a dir need to add PATTERN
