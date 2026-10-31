@@ -179,6 +179,36 @@ func parseScontrolValue(input, key string) string {
 	return "unknown"
 }
 
+// readUint reads a cgroup file that holds a single number, e.g. memory.current.
+// A missing file (e.g. memory.peak on kernels < 5.19) gives 0.
+func readUint(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+// readStatValue reads one "key value" line from a cgroup file such as cpu.stat.
+func readStatValue(path, key string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == key {
+			value, _ := strconv.ParseUint(fields[1], 10, 64)
+			return value
+		}
+	}
+	return 0
+}
+
 func (jobs *allJobs) getCPUData(nodeName string, flag int) []JobStat {
 
 	var jobStats []JobStat = make([]JobStat, 0)
