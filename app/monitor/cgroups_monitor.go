@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,8 +19,12 @@ const PATH string = "/sys/fs/cgroup/system.slice/slurmstepd.scope/"
 const PATTERN string = "job_"
 
 type jobData struct {
-	user string
-	node string
+	user      string
+	node      string
+	account   string
+	partition string
+	name      string
+	cpus      int
 }
 
 type cpuMetrics struct {
@@ -83,11 +88,16 @@ func (jobs allJobs) getNewJobs(nodeName string) {
 			} else {
 				meta.user = rawUser
 			}
+			meta.account = parseScontrolValue(output, "Account")
+			meta.partition = parseScontrolValue(output, "Partition")
+			meta.name = parseScontrolValue(output, "JobName")
+			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
 
 			jobs.JobCache[jobId] = meta
 			jobs.JobPid[jobId] = []uint32{}
 			jobs.JobMetrics[jobId] = cpuMetrics{}
-			fmt.Printf("Found new job: %s USER: %s\n", jobId, meta.user)
+			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
+				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
 		}
 	}
 
