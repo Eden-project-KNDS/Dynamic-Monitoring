@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,8 +20,12 @@ const PATH string = "/sys/fs/cgroup/system.slice/slurmstepd.scope/"
 const PATTERN string = "job_"
 
 type jobData struct {
-	user string
-	node string
+	user      string
+	node      string
+	account   string
+	partition string
+	name      string
+	cpus      int
 }
 
 type cpuMetrics struct {
@@ -37,6 +43,13 @@ type cpuMetrics struct {
 	throttledUsec uint64
 }
 
+type allJobs struct {
+	mu         sync.RWMutex // the discovery loop writes the map, scrapes read them
+	JobCache   map[string]jobData
+	JobPid     map[string][]uint32
+	JobMetrics map[string]cpuMetrics
+}
+
 func keyExists(m map[string]jobData, key string) bool {
 	_, ok := m[key]
 	return ok
@@ -47,7 +60,7 @@ func getJobId(folderName string) string {
 	return folderName[4:]
 }
 
-func getNewJobs(JobCache map[string]jobData, nodeName string) {
+func (jobs *allJobs) getNewJobs(nodeName string) {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
@@ -56,7 +69,7 @@ func getNewJobs(JobCache map[string]jobData, nodeName string) {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(JobCache, getJobId(entry.Name())) {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(jobs.JobCache, getJobId(entry.Name())) {
 			jobId := getJobId(entry.Name())
 			cmd := exec.Command("scontrol", "show", "job", jobId)
 			var out bytes.Buffer
@@ -77,24 +90,34 @@ func getNewJobs(JobCache map[string]jobData, nodeName string) {
 			} else {
 				meta.user = rawUser
 			}
+			meta.account = parseScontrolValue(output, "Account")
+			meta.partition = parseScontrolValue(output, "Partition")
+			meta.name = parseScontrolValue(output, "JobName")
+			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
 
-			JobCache[jobId] = meta
-
-			fmt.Printf("Found new job: %s USER: %s\n", jobId, meta.user)
+			jobs.mu.Lock()
+			jobs.JobCache[jobId] = meta
+			jobs.JobPid[jobId] = []uint32{}
+			jobs.JobMetrics[jobId] = cpuMetrics{}
+			jobs.mu.Unlock()
+			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
+				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
 		}
 	}
 
 }
 
-func clearOldJobs(JobCache map[string]jobData, JobPID map[string][]uint32, JobMetrics map[string]cpuMetrics) {
+func (jobs *allJobs) clearOldJobs() {
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
 
-	for jobId, _ := range JobCache {
+	for jobId, _ := range jobs.JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
 		if err != nil { // file doesn't exist -> clearing maps
 			fmt.Printf("Job %s is not longer valid\n", jobId)
-			delete(JobPID, jobId)
-			delete(JobMetrics, jobId)
-			delete(JobCache, jobId)
+			delete(jobs.JobPid, jobId)
+			delete(jobs.JobMetrics, jobId)
+			delete(jobs.JobCache, jobId)
 		}
 	}
 }
@@ -105,7 +128,7 @@ func getAllPids(jobId string) []uint32 {
 	jobDir := PATH + PATTERN + jobId
 
 	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "cgroups.procs" {
+		if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
 			data, readErr := os.ReadFile(path)
 			if readErr != nil {
 				fmt.Printf("Something went wrong when getting file with pids for job %s\n", jobId)
@@ -134,12 +157,14 @@ func getAllPids(jobId string) []uint32 {
 	return pids
 }
 
-func getAllPidsFromJob(JobPID map[string][]uint32) {
+func (jobs *allJobs) getAllPidsFromJob() {
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
 
 	fmt.Println("Looking for PIDS")
-	for jobId, _ := range JobPID {
-		JobPID[jobId] = getAllPids(jobId)
-		fmt.Printf("PIDS from JOB %s:\n%v ", jobId, JobPID[jobId])
+	for jobId, _ := range jobs.JobPid {
+		jobs.JobPid[jobId] = getAllPids(jobId)
+		fmt.Printf("PIDS from JOB %s:%v \n", jobId, jobs.JobPid[jobId])
 	}
 
 }
@@ -154,14 +179,92 @@ func parseScontrolValue(input, key string) string {
 	return "unknown"
 }
 
-func initCPUMonitor(nodeName string) {
+// readUint reads a cgroup file that holds a single number, e.g. memory.current.
+// A missing file (e.g. memory.peak on kernels < 5.19) gives 0.
+func readUint(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
 
+// readStatValue reads one "key value" line from a cgroup file such as cpu.stat.
+func readStatValue(path, key string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == key {
+			value, _ := strconv.ParseUint(fields[1], 10, 64)
+			return value
+		}
+	}
+	return 0
+}
+
+func (jobs *allJobs) getCPUData(nodeName string, flag int) []JobStat {
+
+	var jobStats []JobStat = make([]JobStat, 0)
+
+	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
+
+	jobs.getNewJobs(nodeName)
+	jobs.clearOldJobs()
+	jobs.getAllPidsFromJob()
+
+	if flag == 1 {
+		return jobStats
+	}
+	return nil
+}
+
+// Jobs returns the jobs found by the discovery loop, with usage read from cgroup right now (on every scrape).
+func (jobs *allJobs) Jobs() []JobStat {
+	jobs.mu.RLock()
+	defer jobs.mu.RUnlock()
+
+	stats := make([]JobStat, 0, len(jobs.JobCache))
+	for jobId, meta := range jobs.JobCache {
+		dir := PATH + PATTERN + jobId + "/"
+		if _, err := os.Stat(dir); err != nil {
+			continue // the job has just ended, the loop will remove it soon
+		}
+
+		stats = append(stats, JobStat{
+			JobID:         jobId,
+			User:          meta.user,
+			Account:       meta.account,
+			Partition:     meta.partition,
+			Name:          meta.name,
+			CPUsAllocated: meta.cpus,
+			CPUUsageUsec:  readStatValue(dir+"cpu.stat", "usage_usec"),
+			MemoryCurrent: readUint(dir + "memory.current"),
+			MemoryPeak:    readUint(dir + "memory.peak"),
+			MemoryLimit:   readUint(dir + "memory.max"),
+		})
+	}
+	return stats
+}
+
+// key is job_id number to search for a dir need to add PATTERN
+func newAllJobs() *allJobs {
+	return &allJobs{
+		JobCache:   make(map[string]jobData),
+		JobPid:     make(map[string][]uint32),
+		JobMetrics: make(map[string]cpuMetrics),
+	}
+}
+
+// run is the discovery loop: it finds new jobs, removes finished ones and refreshes PIDs.
+func (jobs *allJobs) run(nodeName string) {
 	fmt.Println("Init CPU Monitoring")
-
-	// key is job_id number to search for a dir need to add PATTERN
-	JobCache := make(map[string]jobData)
-	JobPid := make(map[string][]uint32)
-	JobMetrics := make(map[string]cpuMetrics)
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -173,14 +276,8 @@ func initCPUMonitor(nodeName string) {
 		case t := <-ticker.C:
 			{
 				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				fmt.Printf("Size of JobCache : %d\n", len(JobCache))
-
-				getNewJobs(JobCache, nodeName)
-				clearOldJobs(JobCache, JobPid, JobMetrics)
-				//getAllPidsFromJob(JobPid) has a bug
-
+				jobs.getCPUData(nodeName, 0)
 			}
 		}
 	}
-
 }

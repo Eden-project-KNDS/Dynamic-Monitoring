@@ -138,12 +138,15 @@ func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
 			j.JobID,
 		)
 
-		ch <- prometheus.MustNewConstMetric(
-			jobMemoryPeakDesc,
-			prometheus.GaugeValue,
-			float64(j.MemoryPeak),
-			j.JobID,
-		)
+		// 0 means the kernel has no memory.peak (< 5.19); Grafana can use max_over_time(memory_used) instead.
+		if j.MemoryPeak > 0 {
+			ch <- prometheus.MustNewConstMetric(
+				jobMemoryPeakDesc,
+				prometheus.GaugeValue,
+				float64(j.MemoryPeak),
+				j.JobID,
+			)
+		}
 
 		// No limit means nothing was reserved, so there is nothing to report.
 		if j.MemoryLimit > 0 {
