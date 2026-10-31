@@ -181,17 +181,18 @@ func (jobs allJobs) Jobs() []JobStat {
 	return jobs.getCPUData("gpunode3", 1)
 }
 
-func initCPUMonitor(nodeName string) {
-
-	fmt.Println("Init CPU Monitoring")
-
-	//stwórz strukta i jego pola
-	// key is job_id number to search for a dir need to add PATTERN
-	var jobs allJobs = allJobs{
+// key is job_id number to search for a dir need to add PATTERN
+func newAllJobs() *allJobs {
+	return &allJobs{
 		JobCache:   make(map[string]jobData),
 		JobPid:     make(map[string][]uint32),
 		JobMetrics: make(map[string]cpuMetrics),
 	}
+}
+
+// run is the discovery loop: it finds new jobs, removes finished ones and refreshes PIDs.
+func (jobs *allJobs) run(nodeName string) {
+	fmt.Println("Init CPU Monitoring")
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
 	defer ticker.Stop()
@@ -207,5 +208,4 @@ func initCPUMonitor(nodeName string) {
 			}
 		}
 	}
-
 }
