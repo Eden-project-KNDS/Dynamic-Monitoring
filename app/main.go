@@ -30,11 +30,10 @@ func main() {
 
 	fmt.Printf("Start\n")
 	gpus := monitor.NewGPUMonitor()
-	go monitor.StartMonitoring(node)
+	jobs := monitor.StartMonitoring(node)
 
-	fake := exporter.FakeSource{}
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(exporter.NewCollector(gpus, fake))
+	reg.MustRegister(exporter.NewCollector(gpus, jobs))
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
