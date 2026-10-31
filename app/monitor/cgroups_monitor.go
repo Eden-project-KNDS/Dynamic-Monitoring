@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,6 +44,7 @@ type cpuMetrics struct {
 }
 
 type allJobs struct {
+	mu         sync.RWMutex // the discovery loop writes the map, scrapes read them
 	JobCache   map[string]jobData
 	JobPid     map[string][]uint32
 	JobMetrics map[string]cpuMetrics
@@ -58,7 +60,7 @@ func getJobId(folderName string) string {
 	return folderName[4:]
 }
 
-func (jobs allJobs) getNewJobs(nodeName string) {
+func (jobs *allJobs) getNewJobs(nodeName string) {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
@@ -93,9 +95,11 @@ func (jobs allJobs) getNewJobs(nodeName string) {
 			meta.name = parseScontrolValue(output, "JobName")
 			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
 
+			jobs.mu.Lock()
 			jobs.JobCache[jobId] = meta
 			jobs.JobPid[jobId] = []uint32{}
 			jobs.JobMetrics[jobId] = cpuMetrics{}
+			jobs.mu.Unlock()
 			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
 				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
 		}
@@ -103,7 +107,9 @@ func (jobs allJobs) getNewJobs(nodeName string) {
 
 }
 
-func (jobs allJobs) clearOldJobs() {
+func (jobs *allJobs) clearOldJobs() {
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
 
 	for jobId, _ := range jobs.JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
@@ -151,7 +157,9 @@ func getAllPids(jobId string) []uint32 {
 	return pids
 }
 
-func (jobs allJobs) getAllPidsFromJob() {
+func (jobs *allJobs) getAllPidsFromJob() {
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
 
 	fmt.Println("Looking for PIDS")
 	for jobId, _ := range jobs.JobPid {
@@ -171,7 +179,7 @@ func parseScontrolValue(input, key string) string {
 	return "unknown"
 }
 
-func (jobs allJobs) getCPUData(nodeName string, flag int) []JobStat {
+func (jobs *allJobs) getCPUData(nodeName string, flag int) []JobStat {
 
 	var jobStats []JobStat = make([]JobStat, 0)
 
@@ -187,7 +195,7 @@ func (jobs allJobs) getCPUData(nodeName string, flag int) []JobStat {
 	return nil
 }
 
-func (jobs allJobs) Jobs() []JobStat {
+func (jobs *allJobs) Jobs() []JobStat {
 	return jobs.getCPUData("gpunode3", 1)
 }
 
