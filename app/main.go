@@ -43,14 +43,14 @@ func main() {
 	reg.MustRegister(exporter.NewCollector(gpus, jobs))
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	// http.Server instead of http.ListenAndServe, because only a server can be shut down.
+
 	srv := &http.Server{Addr: listenAddress}
 
 	// Shuts the http server down on a shutdown signal; open requests get up to 5 s to finish.
 	go func() {
 		defer s.Wg.Done()
 		<-s.Ctx.Done()
-		fmt.Println("Shutdown signal received, stopping")
+		fmt.Println("Stopping monitor")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -59,12 +59,18 @@ func main() {
 		}
 	}()
 
-	// ListenAndServe returns ErrServerClosed right after Shutdown is called.
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatal(err)
+	// On a server error (e.g. port in use) stop the program the same way as on a signal.
+	serverErr := srv.ListenAndServe()
+	if serverErr != http.ErrServerClosed {
+		log.Printf("HTTP server error: %v", serverErr)
+		stop()
 	}
 
-	// Wait until all goroutines have stopped.
 	s.Wg.Wait()
+	gpus.Close() 
 	fmt.Println("Monitor stopped")
+
+	if serverErr != http.ErrServerClosed {
+		os.Exit(1)
+	}
 }
