@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slurm-monitor/synchronization"
 	"strconv"
 	"strings"
 	"sync"
@@ -263,7 +264,9 @@ func newAllJobs() *allJobs {
 }
 
 // run is the discovery loop: it finds new jobs, removes finished ones and refreshes PIDs.
-func (jobs *allJobs) run(nodeName string) {
+// It returns when s.Ctx is cancelled.
+func (jobs *allJobs) run(nodeName string, s *synchronization.SyncStruct) {
+	defer s.Wg.Done()
 	fmt.Println("Init CPU Monitoring")
 
 	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
@@ -271,7 +274,9 @@ func (jobs *allJobs) run(nodeName string) {
 
 	for {
 		select {
-		//obsługa błedów
+		case <-s.Ctx.Done():
+			fmt.Println("Job discovery loop stopped")
+			return
 
 		case t := <-ticker.C:
 			{
