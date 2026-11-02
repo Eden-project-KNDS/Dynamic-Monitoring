@@ -1,82 +1,34 @@
-# Monitor App Test Scripts
+# Legacy Monitor Test Scripts
 
-This directory contains helper scripts and a sample job to test the `eden-monitor` Go executable in a controlled environment.
+These scripts exercise the deprecated `eden-monitor` utility using fake
+`nvidia-smi` and `pidstat` commands. They do not test the active Prometheus
+application in `app/`.
 
-## Prerequisites
+## Build
 
-- Go 1.20+ installed and available in your `PATH`
-- Linux environment (scripts depend on common Linux utilities)
-- `app/monitor/monitor.go` present in the parent monitor directory
-
-## What these scripts do
-
-- `fake_nvidia_smi.sh` creates a fake `nvidia-smi` binary that returns synthetic GPU information.
-- `fake_pidstat.sh` creates a fake `pidstat` binary that returns synthetic process statistics.
-- `test_job.sh` launches a sample workload and runs the monitor against it using the fake tools.
-
-## Build the monitor executable
-
-From the `app/monitor` directory:
+From the legacy module directory:
 
 ```bash
-cd Dynamic-Monitoring/app/monitor
-go build monitor.go -o eden-monitor
+cd "_app [deprecated]/monitor"
+make monitor
 ```
 
-This produces the `eden-monitor` binary in `app/monitor`.
+This creates `eden-monitor` next to `monitor.go`.
 
-## Run the test harness
+## Run the harness
 
-1. Change into the test directory:
-
-```bash
-cd Dynamic-Monitoring/app/monitor/test
-```
-
-2. Make the fake tool scripts executable:
+From the repository root:
 
 ```bash
+cd "_app [deprecated]/monitor/test"
 chmod +x fake_nvidia_smi.sh fake_pidstat.sh test_job.sh
-```
-
-3. Start the fake tool environment:
-
-```bash
 ./fake_nvidia_smi.sh
 ./fake_pidstat.sh
+env PATH="$(pwd):$PATH" ./test_job.sh
 ```
 
-4. Add the test directory to `PATH` so the monitor uses the fake tools:
-
-```bash
-export PATH=$(pwd):$PATH
-```
-
-5. Run the sample test job:
-
-```bash
-./test_job.sh
-```
-
-## Expected results
-
-- `test_job.sh` should start a dummy workload and invoke `eden-monitor`.
-- `eden-monitor` should call the fake `nvidia-smi` and `pidstat` scripts.
-- The monitor output should include simulated GPU and process statistics, demonstrating that the monitoring flow works end to end.
-
-## Troubleshooting
-
-- If `go build` fails, verify your Go installation and that `monitor.go` has no compile errors.
-- If the monitor still finds the system `nvidia-smi` or `pidstat`, confirm that `PATH` starts with the test directory: `echo $PATH`.
-- If permissions are denied, re-run `chmod +x` on the script files.
-
-## Cleanup
-
-To revert the environment after testing, close the terminal session or remove the test directory from `PATH`.
-
-```bash
-export PATH=$(echo $PATH | sed -e 's#$(pwd):##')
-```
-
-> Note: The fake scripts only affect the current shell session while the test directory is in `PATH`.
+The two fake-tool scripts write executable shims into the test directory. The
+harness starts the monitor, waits briefly, and sends it `SIGTERM`; it is a basic
+manual check rather than an automated test suite. Using `env PATH=...` limits
+the fake commands to this invocation, so no PATH cleanup is needed.
 

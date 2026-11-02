@@ -1,7 +1,9 @@
-Tymon:
-Postawienie slurma na GPUNODE-3
-Napisanie zbierania metryk z GPU nvidi za pomocą biblioteki GO
-Dodanie argumentu uruchomienia node name
-Listowanie cgroups
-Pobieranie obecnych zadań z cgroups
-Aktualizacja hash mapy z uktualnie wykonywanymi zadaniami 
+# Earlier Project Notes
+
+Work recorded in this note:
+
+- Set up Slurm on `GPUNODE-3`.
+- Added NVIDIA GPU metric collection using a Go library.
+- Added a node-name command-line argument.
+- Listed cgroup directories and discovered jobs from cgroups.
+- Updated an in-memory map of currently running jobs.
