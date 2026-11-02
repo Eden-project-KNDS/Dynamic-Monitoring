@@ -14,13 +14,15 @@ The existing monitoring solution generates thousands of log files per month and 
 
 ## What we're building
 
-| Phase | Component             | Description                                                     |
-| ----- | --------------------- | --------------------------------------------------------------- |
-| 0     | Historical analysis   | `sacct` data analysis to quantify the problem                   |
-| 1     | `eden-estimate` CLI   | Suggests realistic `#SBATCH` parameters based on job history    |
-| 2     | Job efficiency report | Post-job report scoring GPU utilisation, memory, and time usage |
-| 3     | Infrastructure        | SQLite → PostgreSQL, Prometheus, Grafana dashboard              |
-| 4     | Web interface         | FastAPI backend + resource estimator form                       |
+The current prototype is a Go-based node monitor for Slurm compute nodes. It
+exposes GPU utilization and memory, plus discovered job metadata and CPU/RAM
+usage, through a Prometheus `/metrics` endpoint.
+
+The longer-term goal is to help users right-size resource requests and help
+cluster administrators identify underused allocations. Planned work includes
+GPU-to-job attribution, broader resource metrics, historical job analysis, and
+recommendations for Slurm job settings. These are roadmap items, not features
+currently provided by the prototype.
 
 ---
 
