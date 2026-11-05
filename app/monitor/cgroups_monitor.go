@@ -123,9 +123,11 @@ func (jobs *allJobs) clearOldJobs() {
 }
 
 func getAllPids(jobId string) []uint32 {
-	var pids []uint32
+	return getAllPidsFromDir(jobId, PATH+PATTERN+jobId)
+}
 
-	jobDir := PATH + PATTERN + jobId
+func getAllPidsFromDir(jobId string, jobDir string) []uint32 {
+	var pids []uint32
 
 	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
