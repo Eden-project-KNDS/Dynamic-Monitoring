@@ -12,25 +12,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const listenAddress = ":9840"
-
 func usage(program string) {
-	fmt.Printf("Program %s takes 1 arg, node name\n  How to run: ./%s node_name", program, program)
+	fmt.Printf("Program %s takes 2 arg, node name and port\n  How to run: ./%s node_name port", program, program)
 
 }
 
 func main() {
 
-	if len(os.Args) != 2 {
+	if len(os.Args) != 3 {
 		usage(os.Args[0])
 		return
 	}
 
 	node := os.Args[1]
+	listenAddress := ":" + os.Args[2]
 
 	fmt.Printf("Start\n")
 	gpus := monitor.NewGPUMonitor()
-	jobs := monitor.StartMonitoring(node)
+	jobs := monitor.NewAllJobs(node)
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(exporter.NewCollector(gpus, jobs))

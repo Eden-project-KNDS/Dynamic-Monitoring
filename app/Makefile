@@ -1,6 +1,7 @@
 .PHONY: default fmt lint test run build test-job test-metrics clean
 
 BIN=slurm-cgroup-monitor
+LISTEN_ADDRESS=9840
 
 # Domyślny cel (wywoływany przez wpisanie samo 'make')
 default: fmt lint
@@ -22,7 +23,7 @@ benchmark:
 	go test -bench=. -benchmem ./monitor
 
 run: build
-	./$(BIN) gpunode3
+	./$(BIN) gpunode3 $(LISTEN_ADDRESS)
 # Kompiluje demona monitorującego zasoby Slurma (z wyciszeniem ostrzeżeń CGO)
 build:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go build -o $(BIN) .
@@ -35,8 +36,8 @@ test-job:
 
 # 2. Odpytuje endpoint Prometheusa i filtruje nasze metryki
 test-metrics:
-	@echo "Pobieram metryki 'eden_' z localhost:9840/metrics..."
-	curl -sS localhost:9840/metrics | grep -E '^eden_(job|gpu)' || (echo "\n[!] Nie znaleziono metryk. Czy slurm-cgroup-monitor jest włączony i czy zadanie działa?" && exit 1)
+	@echo "Pobieram metryki 'eden_' z localhost:$(LISTEN_ADDRESS)/metrics..."
+	curl -sS localhost:$(LISTEN_ADDRESS)/metrics | grep -E '^eden_(job|gpu)' || (echo "\n[!] Nie znaleziono metryk. Czy slurm-cgroup-monitor jest włączony i czy zadanie działa?" && exit 1)
 
 clean:
 	rm -f *.out $(BIN) 
