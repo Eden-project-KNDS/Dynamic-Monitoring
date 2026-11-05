@@ -28,6 +28,7 @@ type gpuMetrics struct {
 	memoryUsedMB      uint64
 	memoryTotalMB     uint64
 	powerWatts        float64
+	pids              []nvml.ProcessInfo
 }
 
 type gpuMonitor struct {
@@ -69,11 +70,14 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 	var gpuStats []GPUStat = make([]GPUStat, m.gpuCount)
 
 	for i := 0; i < m.gpuCount; i++ {
+		// reseting slice size without freeing memory
+		m.metrics[i].pids = m.metrics[i].pids[:0]
 		util, retUtil := m.devices[i].GetUtilizationRates()
 		// _v2 reports driver-reserved memory separately; v1 counts it as used (~450 MiB on an idle card).
 		mem, retMem := m.devices[i].GetMemoryInfo_v2()
 		temp, retTemp := m.devices[i].GetTemperature(nvml.TEMPERATURE_GPU)
 		power, retPower := m.devices[i].GetPowerUsage() // Returns milliwatts
+		proc, retPids := m.devices[i].GetComputeRunningProcesses()
 
 		if retUtil == nvml.SUCCESS {
 			m.metrics[i].coreUtilPercent = uint32(util.Gpu)
@@ -91,6 +95,11 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 
 		if retPower == nvml.SUCCESS {
 			m.metrics[i].powerWatts = float64(power) / 1000.0
+		}
+		if retPids == nvml.SUCCESS {
+			for _, pid := range proc {
+				m.metrics[i].pids = append(m.metrics[i].pids, pid)
+			}
 		}
 
 		if flag == 0 {
