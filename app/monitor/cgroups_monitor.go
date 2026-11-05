@@ -126,7 +126,7 @@ func getAllPids(jobId string) []uint32 {
 	return getAllPidsFromDir(jobId, PATH+PATTERN+jobId)
 }
 
-func getAllPidsFromDir(jobId, jobDir string) []uint32 {
+func getAllPidsFromDir(jobId string, jobDir string) []uint32 {
 	var pids []uint32
 
 	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {

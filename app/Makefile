@@ -18,6 +18,9 @@ lint:
 test:
 	go test -v ./...
 
+benchmark:
+	go test -bench=. -benchmem ./monitor
+
 run: build
 	./$(BIN) gpunode3
 # Kompiluje demona monitorującego zasoby Slurma (z wyciszeniem ostrzeżeń CGO)
