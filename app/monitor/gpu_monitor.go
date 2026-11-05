@@ -28,7 +28,7 @@ type gpuMetrics struct {
 	memoryUsedMB      uint64
 	memoryTotalMB     uint64
 	powerWatts        float64
-	pids              []nvml.ProcessInfo
+	pids              []uint32
 }
 
 type gpuMonitor struct {
@@ -98,9 +98,10 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 		}
 		if retPids == nvml.SUCCESS {
 			for _, pid := range proc {
-				m.metrics[i].pids = append(m.metrics[i].pids, pid)
+				m.metrics[i].pids = append(m.metrics[i].pids, pid.Pid)
 			}
 		}
+		fmt.Printf("XD PIDS GPU %v\n", m.metrics[i].pids)
 
 		if flag == 0 {
 			fmt.Printf("  Core Usage:   %d%%\n", m.metrics[i].coreUtilPercent)
