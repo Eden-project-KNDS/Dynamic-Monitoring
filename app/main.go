@@ -25,11 +25,11 @@ func main() {
 	}
 
 	node := os.Args[1]
-	listenAddress := os.Args[2]
+	listenAddress := ":" + os.Args[2]
 
 	fmt.Printf("Start\n")
 	gpus := monitor.NewGPUMonitor()
-	jobs := monitor.StartMonitoring(node)
+	jobs := monitor.NewAllJobs(node)
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(exporter.NewCollector(gpus, jobs))
