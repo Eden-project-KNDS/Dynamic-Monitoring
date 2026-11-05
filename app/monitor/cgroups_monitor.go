@@ -203,22 +203,6 @@ func readStatValue(path, key string) uint64 {
 	return 0
 }
 
-func (jobs *allJobs) getCPUData(flag int) []JobStat {
-
-	var jobStats []JobStat = make([]JobStat, 0)
-
-	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
-
-	jobs.getNewJobs()
-	jobs.clearOldJobs()
-	jobs.getAllPidsFromJob()
-
-	if flag == 1 {
-		return jobStats
-	}
-	return nil
-}
-
 // Jobs returns the jobs found by the discovery loop, with usage read from cgroup right now (on every scrape).
 func (jobs *allJobs) Jobs() []JobStat {
 
@@ -226,7 +210,7 @@ func (jobs *allJobs) Jobs() []JobStat {
 	jobs.clearOldJobs()
 	jobs.getAllPidsFromJob()
 	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
-	
+
 	stats := make([]JobStat, 0, len(jobs.JobCache))
 	for jobId, meta := range jobs.JobCache {
 		dir := PATH + PATTERN + jobId + "/"

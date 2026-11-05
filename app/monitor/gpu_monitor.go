@@ -64,7 +64,7 @@ func NewGPUMonitor() *gpuMonitor {
 }
 
 // flag 0 print on terminal flag 1 send to prometheus
-func (m *gpuMonitor) getGpuStats(flag int) []GPUStat {
+func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 
 	var gpuStats []GPUStat = make([]GPUStat, m.gpuCount)
 
@@ -112,13 +112,13 @@ func (m *gpuMonitor) getGpuStats(flag int) []GPUStat {
 	if flag == 0 {
 		return nil
 	} else if flag == 1 {
-		return gpuStats
+		return &gpuStats
 	}
 	return nil
 }
 
 func (m *gpuMonitor) GPUs() []GPUStat {
-	return m.getGpuStats(1)
+	return *(m.getGpuStats(1))
 }
 
 // Close releases NVML. Call it once, when the program shuts down.

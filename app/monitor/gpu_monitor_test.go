@@ -40,12 +40,12 @@ func TestGpuGetStats(t *testing.T) {
 	}
 	stats := monitor.getGpuStats(1)
 
-	if len(stats) != monitor.gpuCount {
-		t.Errorf("Expected %d stats, recieved %d", monitor.gpuCount, len(stats))
+	if len(*stats) != monitor.gpuCount {
+		t.Errorf("Expected %d stats, recieved %d", monitor.gpuCount, len(*stats))
 	}
 
-	if len(stats) > 0 {
-		if stats[0].UUID == "" {
+	if len(*stats) > 0 {
+		if (*stats)[0].UUID == "" {
 			t.Error("Expected UUID gpu, got empty string")
 		}
 	}
