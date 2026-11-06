@@ -3,6 +3,7 @@ package monitor
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -74,7 +75,12 @@ func parseProcCgroups(pid uint32) string {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	return parseCgroupReader(file)
+}
+
+func parseCgroupReader(r io.Reader) string {
+
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		splitLine := strings.Split(line, "/")
