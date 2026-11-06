@@ -1,8 +1,12 @@
 package monitor
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
@@ -28,7 +32,6 @@ type gpuMetrics struct {
 	memoryUsedMB      uint64
 	memoryTotalMB     uint64
 	powerWatts        float64
-	pids              []uint32
 }
 
 type gpuMonitor struct {
@@ -64,14 +67,35 @@ func NewGPUMonitor() *gpuMonitor {
 	return &newGPUMonitor
 }
 
+func parseProcCgroups(pid uint32) string {
+	file, err := os.Open("/proc/" + strconv.FormatUint(uint64(pid), 10) + "/cgroup")
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		splitLine := strings.Split(line, "/")
+
+		for _, val := range splitLine {
+			if len(val) > 3 && val[:3] == "job" {
+				return val
+			}
+		}
+	}
+	return ""
+}
+
 // flag 0 print on terminal flag 1 send to prometheus
 func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 
 	var gpuStats []GPUStat = make([]GPUStat, m.gpuCount)
 
 	for i := 0; i < m.gpuCount; i++ {
+		jobIdString := ""
 		// reseting slice size without freeing memory
-		m.metrics[i].pids = m.metrics[i].pids[:0]
 		util, retUtil := m.devices[i].GetUtilizationRates()
 		// _v2 reports driver-reserved memory separately; v1 counts it as used (~450 MiB on an idle card).
 		mem, retMem := m.devices[i].GetMemoryInfo_v2()
@@ -98,10 +122,13 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 		}
 		if retPids == nvml.SUCCESS {
 			for _, pid := range proc {
-				m.metrics[i].pids = append(m.metrics[i].pids, pid.Pid)
+				jobIdString = parseProcCgroups(pid.Pid)
+				fmt.Println(jobIdString)
+				if jobIdString != "" {
+					break
+				}
 			}
 		}
-		fmt.Printf("XD PIDS GPU %v\n", m.metrics[i].pids)
 
 		if flag == 0 {
 			fmt.Printf("  Core Usage:   %d%%\n", m.metrics[i].coreUtilPercent)
@@ -114,7 +141,7 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 				gpuStats[i].UUID = uuid
 			}
 			gpuStats[i].UtilPercent = m.metrics[i].coreUtilPercent
-			gpuStats[i].JobID = ""
+			gpuStats[i].JobID = jobIdString
 			gpuStats[i].MemoryUsed = m.metrics[i].memoryUsedMB * 1024 * 1024 // For proper display in Grafana
 
 		}
