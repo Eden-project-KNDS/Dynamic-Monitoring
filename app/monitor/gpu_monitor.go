@@ -101,7 +101,6 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 
 	for i := 0; i < m.gpuCount; i++ {
 		jobIdString := ""
-		// reseting slice size without freeing memory
 		util, retUtil := m.devices[i].GetUtilizationRates()
 		// _v2 reports driver-reserved memory separately; v1 counts it as used (~450 MiB on an idle card).
 		mem, retMem := m.devices[i].GetMemoryInfo_v2()
