@@ -41,7 +41,7 @@ func main() {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(exporter.NewCollector(gpus, jobs))
 
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{MaxRequestsInFlight: 1}))
 
 	srv := &http.Server{Addr: listenAddress}
 
