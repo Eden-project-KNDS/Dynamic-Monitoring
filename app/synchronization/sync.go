@@ -10,7 +10,6 @@ import (
 // NUMBER_OF_GOROUTINES is how many long-running goroutines the program starts (now only the http shutdown one).
 const NUMBER_OF_GOROUTINES = 1
 
-
 // SyncStruct is shared by all long-running goroutines, so they can stop together.
 type SyncStruct struct {
 	Ctx context.Context // cancelled on SIGINT or SIGTERM

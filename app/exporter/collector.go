@@ -3,8 +3,9 @@ package exporter
 import (
 	"strconv"
 
-	"github.com/prometheus/client_golang/prometheus"
 	monitor "slurm-monitor/monitor"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // GPUSource is anything that can tell us the current state of the GPU.
