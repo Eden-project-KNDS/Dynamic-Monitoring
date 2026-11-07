@@ -7,8 +7,9 @@ import (
 	"syscall"
 )
 
-// For now, NUMBER_OF_GOROUTINES is a set value that states how many long-running goroutines the program starts.
-const NUMBER_OF_GOROUTINES = 2
+// NUMBER_OF_GOROUTINES is how many long-running goroutines the program starts (now only the http shutdown one).
+const NUMBER_OF_GOROUTINES = 1
+
 
 // SyncStruct is shared by all long-running goroutines, so they can stop together.
 type SyncStruct struct {
