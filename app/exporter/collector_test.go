@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	monitor "slurm-monitor/monitor"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // testSource returns exactly the data a test gives it.
