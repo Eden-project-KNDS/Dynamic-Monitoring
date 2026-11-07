@@ -34,6 +34,7 @@ currently provided by the prototype.
 │   ├── exporter/                Prometheus metric collector and tests
 │   ├── monitor/                 NVIDIA and Slurm/cgroup data sources
 │   └── stress_test/             Slurm workload for cluster testing
+├── deploy/                      Prometheus and Grafana (Docker Compose)
 ├── Documentation/               Implementation notes and draft architecture
 ├── tests/                       Root-level Python tests (currently a placeholder)
 └── _app [deprecated]/           Previous monitor and database uploader
@@ -61,13 +62,12 @@ purpose local monitor.
 ```bash
 cd app
 make build
-./slurm-cgroup-monitor <node-name>
+./slurm-cgroup-monitor <node-name> <port>
 ```
 
-The HTTP metrics endpoint listens on port `9840` and is available at
-`http://<node>:9840/metrics`. Confirm network and host firewall rules before
-configuring Prometheus to scrape a compute node. The Makefile's `make run`
-target uses `gpunode3` as its example node name.
+The HTTP metrics endpoint is available at `http://<node>:<port>/metrics`; the
+Makefile's `make run` target uses `gpunode3` and port `9840`. To store the
+metrics and view them in Grafana, see [the deployment guide](deploy/README.md).
 
 ### Tests and formatting
 

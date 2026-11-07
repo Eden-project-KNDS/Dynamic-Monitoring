@@ -17,8 +17,10 @@ scrape; the source interfaces are defined in `collector.go`.
 | `eden_job_memory_peak_bytes` | Gauge | `job_id` | Peak cgroup memory, omitted when unavailable or zero |
 | `eden_job_memory_allocated_bytes` | Gauge | `job_id` | Cgroup memory limit, omitted when absent |
 
-GPU `job_id` values are currently empty in the NVML-backed monitor, so GPU
-allocation-to-job attribution is not implemented. See
+GPU `job_id` comes from the processes running on the card (PID → cgroup) and
+uses the same format as the job metrics (`"61"`, not `"job_61"`), so GPU and job
+metrics can be joined on `job_id`. A reserved GPU without a process has an empty
+`job_id`. See
 [`Documentation/eden-job-exporter-spec.md`](../../Documentation/eden-job-exporter-spec.md)
 for proposed metrics that are not all implemented yet.
 
