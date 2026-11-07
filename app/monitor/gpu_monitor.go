@@ -3,7 +3,6 @@ package monitor
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
@@ -65,7 +64,7 @@ func NewGPUMonitor() *gpuMonitor {
 }
 
 // flag 0 print on terminal flag 1 send to prometheus
-func (m gpuMonitor) getGpuStats(flag int) []GPUStat {
+func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 
 	var gpuStats []GPUStat = make([]GPUStat, m.gpuCount)
 
@@ -113,33 +112,13 @@ func (m gpuMonitor) getGpuStats(flag int) []GPUStat {
 	if flag == 0 {
 		return nil
 	} else if flag == 1 {
-		return gpuStats
+		return &gpuStats
 	}
 	return nil
 }
 
-func (m gpuMonitor) GPUs() []GPUStat {
-	return m.getGpuStats(1)
-}
-
-func (m gpuMonitor) start(gpuCount int) {
-
-	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-
-		//case obsługa sygnału wyjścia
-
-		case t := <-ticker.C:
-			{
-				fmt.Printf("%s\n", t.Format("2006-01-02 15:04:05"))
-				m.getGpuStats(0)
-			}
-		}
-	}
-
+func (m *gpuMonitor) GPUs() []GPUStat {
+	return *(m.getGpuStats(1))
 }
 
 // Close releases NVML. Call it once, when the program shuts down.

@@ -14,21 +14,75 @@ The existing monitoring solution generates thousands of log files per month and 
 
 ## What we're building
 
-| Phase | Component             | Description                                                     |
-| ----- | --------------------- | --------------------------------------------------------------- |
-| 0     | Historical analysis   | `sacct` data analysis to quantify the problem                   |
-| 1     | `eden-estimate` CLI   | Suggests realistic `#SBATCH` parameters based on job history    |
-| 2     | Job efficiency report | Post-job report scoring GPU utilisation, memory, and time usage |
-| 3     | Infrastructure        | SQLite → PostgreSQL, Prometheus, Grafana dashboard              |
-| 4     | Web interface         | FastAPI backend + resource estimator form                       |
+The current prototype is a Go-based node monitor for Slurm compute nodes. It
+exposes GPU utilization and memory, plus discovered job metadata and CPU/RAM
+usage, through a Prometheus `/metrics` endpoint.
+
+The longer-term goal is to help users right-size resource requests and help
+cluster administrators identify underused allocations. Planned work includes
+GPU-to-job attribution, broader resource metrics, historical job analysis, and
+recommendations for Slurm job settings. These are roadmap items, not features
+currently provided by the prototype.
 
 ---
 
-## Repository structure (TODO)
+## Repository structure
 
----
+```text
+.
+├── app/                         Active Go monitor and Prometheus exporter
+│   ├── exporter/                Prometheus metric collector and tests
+│   ├── monitor/                 NVIDIA and Slurm/cgroup data sources
+│   └── stress_test/             Slurm workload for cluster testing
+├── Documentation/               Implementation notes and draft architecture
+├── tests/                       Root-level Python tests (currently a placeholder)
+└── _app [deprecated]/           Previous monitor and database uploader
+```
 
-## Getting started (TODO)
+The active application is under `app/` and is a Go module. The root directory
+does not define a Makefile or application runtime.
+
+## Getting started
+
+### Requirements
+
+- Go version declared by `app/go.mod` (`1.27.2`).
+- NVIDIA drivers and NVML for GPU metrics.
+- Linux Slurm compute-node access and readable cgroup v2 files for job metrics.
+- The `scontrol` command for retrieving Slurm job metadata.
+- `make`, `goimports`, and `golangci-lint` for the corresponding Makefile targets.
+
+The monitor's cgroup path is currently hard-coded in `app/monitor/cgroups_monitor.go`.
+This prototype is intended to run on a configured Slurm node, not as a general
+purpose local monitor.
+
+### Build and run
+
+```bash
+cd app
+make build
+./slurm-cgroup-monitor <node-name>
+```
+
+The HTTP metrics endpoint listens on port `9840` and is available at
+`http://<node>:9840/metrics`. Confirm network and host firewall rules before
+configuring Prometheus to scrape a compute node. The Makefile's `make run`
+target uses `gpunode3` as its example node name.
+
+### Tests and formatting
+
+```bash
+cd app
+make test
+make fmt
+```
+
+`make` with no target runs formatting and linting. For the root Python placeholder
+test, run `python -m pytest` from the repository root after installing
+`requirements.txt`. The placeholder is not application coverage.
+
+See [the active app guide](app/README.md), [implementation notes](Documentation/DOCUMENTATION.md),
+and [the documentation index](Documentation/README.md) for details.
 
 ---
 
@@ -135,6 +189,12 @@ The `.gitignore` excludes the following — never force-add these:
 
 ---
 
-## Documentation (TODO: partially done)
+## Documentation
 
----
+- [Documentation index](Documentation/README.md)
+- [Current implementation](Documentation/DOCUMENTATION.md)
+- [Draft exporter architecture](Documentation/eden-job-exporter-spec.md)
+- [Older project notes](Documentation/Prace.md)
+
+The architecture specification describes a target design; it is not a guarantee
+that each proposed feature exists in the active application.

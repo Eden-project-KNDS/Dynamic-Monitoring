@@ -9,11 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slurm-monitor/synchronization"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
 
 // tu znajdują się pliki
@@ -45,7 +42,7 @@ type cpuMetrics struct {
 }
 
 type allJobs struct {
-	mu         sync.RWMutex // the discovery loop writes the map, scrapes read them
+	nodeName   string
 	JobCache   map[string]jobData
 	JobPid     map[string][]uint32
 	JobMetrics map[string]cpuMetrics
@@ -61,7 +58,7 @@ func getJobId(folderName string) string {
 	return folderName[4:]
 }
 
-func (jobs *allJobs) getNewJobs(nodeName string) {
+func (jobs *allJobs) getNewJobs() {
 
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
@@ -82,7 +79,7 @@ func (jobs *allJobs) getNewJobs(nodeName string) {
 				continue
 			}
 
-			meta := jobData{node: nodeName}
+			meta := jobData{node: jobs.nodeName}
 			output := out.String()
 			rawUser := parseScontrolValue(output, "UserId")
 
@@ -96,11 +93,10 @@ func (jobs *allJobs) getNewJobs(nodeName string) {
 			meta.name = parseScontrolValue(output, "JobName")
 			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
 
-			jobs.mu.Lock()
 			jobs.JobCache[jobId] = meta
 			jobs.JobPid[jobId] = []uint32{}
 			jobs.JobMetrics[jobId] = cpuMetrics{}
-			jobs.mu.Unlock()
+
 			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
 				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
 		}
@@ -109,8 +105,6 @@ func (jobs *allJobs) getNewJobs(nodeName string) {
 }
 
 func (jobs *allJobs) clearOldJobs() {
-	jobs.mu.Lock()
-	defer jobs.mu.Unlock()
 
 	for jobId, _ := range jobs.JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
@@ -124,9 +118,11 @@ func (jobs *allJobs) clearOldJobs() {
 }
 
 func getAllPids(jobId string) []uint32 {
-	var pids []uint32
+	return getAllPidsFromDir(jobId, PATH+PATTERN+jobId)
+}
 
-	jobDir := PATH + PATTERN + jobId
+func getAllPidsFromDir(jobId string, jobDir string) []uint32 {
+	var pids []uint32
 
 	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
@@ -159,9 +155,6 @@ func getAllPids(jobId string) []uint32 {
 }
 
 func (jobs *allJobs) getAllPidsFromJob() {
-	jobs.mu.Lock()
-	defer jobs.mu.Unlock()
-
 	fmt.Println("Looking for PIDS")
 	for jobId, _ := range jobs.JobPid {
 		jobs.JobPid[jobId] = getAllPids(jobId)
@@ -210,26 +203,13 @@ func readStatValue(path, key string) uint64 {
 	return 0
 }
 
-func (jobs *allJobs) getCPUData(nodeName string, flag int) []JobStat {
-
-	var jobStats []JobStat = make([]JobStat, 0)
-
-	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
-
-	jobs.getNewJobs(nodeName)
-	jobs.clearOldJobs()
-	jobs.getAllPidsFromJob()
-
-	if flag == 1 {
-		return jobStats
-	}
-	return nil
-}
-
 // Jobs returns the jobs found by the discovery loop, with usage read from cgroup right now (on every scrape).
 func (jobs *allJobs) Jobs() []JobStat {
-	jobs.mu.RLock()
-	defer jobs.mu.RUnlock()
+
+	jobs.getNewJobs()
+	jobs.clearOldJobs()
+	jobs.getAllPidsFromJob()
+	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
 	stats := make([]JobStat, 0, len(jobs.JobCache))
 	for jobId, meta := range jobs.JobCache {
@@ -255,34 +235,11 @@ func (jobs *allJobs) Jobs() []JobStat {
 }
 
 // key is job_id number to search for a dir need to add PATTERN
-func newAllJobs() *allJobs {
+func NewAllJobs(nodeName string) *allJobs {
 	return &allJobs{
+		nodeName:   nodeName,
 		JobCache:   make(map[string]jobData),
 		JobPid:     make(map[string][]uint32),
 		JobMetrics: make(map[string]cpuMetrics),
-	}
-}
-
-// run is the discovery loop: it finds new jobs, removes finished ones and refreshes PIDs.
-// It returns when s.Ctx is cancelled.
-func (jobs *allJobs) run(nodeName string, s *synchronization.SyncStruct) {
-	defer s.Wg.Done()
-	fmt.Println("Init CPU Monitoring")
-
-	ticker := time.NewTicker(time.Duration(TimeInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.Ctx.Done():
-			fmt.Println("Job discovery loop stopped")
-			return
-
-		case t := <-ticker.C:
-			{
-				fmt.Printf("CPU RAM %s\n", t.Format("2006-01-02 15:04:05"))
-				jobs.getCPUData(nodeName, 0)
-			}
-		}
 	}
 }

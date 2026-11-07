@@ -1,109 +1,104 @@
-# Dokumentacja aktualnego kodu
+# Current Implementation
 
-## Zakres
+## Scope
 
-Ten dokument opisuje implementację znajdującą się w katalogu `app/`. Jest to wczesny prototyp monitora węzła obliczeniowego Slurma: odczytuje wybrane parametry kart NVIDIA oraz zawiera rozpoczęty mechanizm wykrywania katalogów cgroups jobów. Nie jest to jeszcze kompletny exporter metryk ani implementacja architektury opisanej w [specyfikacji Eden Job Exporter](eden-job-exporter-spec.md).
+This document describes the active Go module in `app/`. It is a prototype Slurm
+node monitor that exposes selected NVIDIA GPU and job cgroup data through a
+Prometheus endpoint. It does not implement every feature in the
+[Eden Job Exporter architecture specification](eden-job-exporter-spec.md).
 
-## Struktura aplikacji
+## Application structure
 
-- `main.go` — obsługuje argument wiersza poleceń i uruchamia monitoring.
-- `monitor/monitor.go` — uruchamia osobne goroutines dla monitoringu GPU i CPU/RAM; określa wspólny interwał próbkowania.
-- `monitor/gpu_monitor.go` — inicjalizuje NVML, wykrywa urządzenia GPU i cyklicznie odczytuje ich parametry.
-- `monitor/cgroups_monitor.go` — zawiera szkic wykrywania jobów w cgroups, strukturę ich danych i strukturę planowanych metryk CPU/RAM.
-- `Makefile` — definiuje formatowanie, lint, testy i budowanie binarium.
-- `go.mod` — definiuje moduł Go `slurm-monitor` i zależność `github.com/NVIDIA/go-nvml`.
+- `main.go` parses the required node-name argument, creates the data sources,
+	registers the collector, and serves `/metrics` on port `9840`.
+- `monitor/monitor.go` starts the background Slurm job discovery loop.
+- `monitor/gpu_monitor.go` initializes NVML and reads GPU statistics when
+	Prometheus scrapes the endpoint.
+- `monitor/cgroups_monitor.go` discovers local Slurm jobs and reads cgroup v2
+	counters and memory values.
+- `exporter/collector.go` converts monitor snapshots into Prometheus metrics.
+- `Makefile` defines formatting, lint, test, build, and cluster test targets.
+- `go.mod` defines the Go module `slurm-monitor` and its dependencies.
 
-## Uruchomienie
+## Build and run
 
-Program oczekuje dokładnie jednego argumentu: nazwy węzła. Przy innej liczbie argumentów wyświetla krótką instrukcję użycia i kończy działanie.
+The executable requires exactly one argument, the node name:
 
 ```bash
 cd app
 make build
-./slurm-cgroup-monitor <nazwa_węzła>
+./slurm-cgroup-monitor <node-name>
 ```
 
-Argument nazwy węzła jest przekazywany do obu monitorów, ale w obecnym kodzie nie wpływa na odczyt danych ani nie jest dołączany do wyjścia. Po uruchomieniu program wypisuje `Start`, a następnie dwa niezależne procesy monitorujące działają w pętli.
+The process listens on `:9840`; scrape `http://<node-name>:9840/metrics` from a
+permitted host. The node name is passed to the discovery loop, but is not
+currently exported as a metric label.
 
-### Cele Makefile
+### Make targets
 
-- `make` (cel domyślny) uruchamia `fmt`, a następnie `lint`.
-- `make fmt` wykonuje `go fmt ./...` i `goimports -w .`.
-- `make lint` uruchamia `golangci-lint run`.
-- `make test` uruchamia `go test -v ./...`.
-- `make build` buduje binarium `slurm-cgroup-monitor`, ustawiając `CGO_CFLAGS="-Wno-deprecated-declarations"`.
+- `make` runs `fmt` followed by `lint`.
+- `make fmt` runs `go fmt ./...` and `goimports -w .`.
+- `make lint` runs `golangci-lint run`.
+- `make test` runs `go test -v ./...`.
+- `make build` builds `slurm-cgroup-monitor` with the configured CGO warning flag.
+- `make test-job` submits a short CPU workload using Slurm.
+- `make test-metrics` scrapes the local endpoint and filters Eden metrics.
+- `make clean` removes the executable and local `.out` files.
 
-## Wspólny cykl próbkowania
+The Slurm-specific targets require a configured cluster and suitable job
+submission permissions.
 
-Stała `TimeInterval` w `monitor/monitor.go` wynosi 5 sekund. Każdy monitor tworzy własny ticker i samodzielnie wypisuje wyniki na standardowe wyjście. Nie ma centralnego harmonogramu ani wspólnego rekordu pomiarowego.
+## Collection behavior
 
-`StartMonitoring` uruchamia funkcje `initGPUMonitoring` i `initCPUMonitor` jako goroutines. Nie czeka na ich zakończenie. Monitor CPU/RAM działa w nieskończonej pętli; monitor GPU również działa w pętli, jeśli wykryje urządzenia (przy zerowej liczbie GPU kończy pracę). Kod nie obsługuje sygnałów zakończenia ani kontrolowanego zamykania.
+Job discovery runs in the background every five seconds. The monitor scans
+`/sys/fs/cgroup/system.slice/slurmstepd.scope/` for directories named
+`job_<id>`, then runs `scontrol show job <id>` to cache the job's user, account,
+partition, name, and allocated CPU count. When a job disappears from that
+directory, its cached metadata is removed.
 
-## Monitoring GPU
+The exporter reads each cached job's cgroup values during a scrape. It exports
+CPU usage from `cpu.stat` and memory values from `memory.current`,
+`memory.peak`, and `memory.max`. Missing files and unparsable values are treated
+as zero; peak and allocated-memory metrics are omitted when their values are
+zero.
 
-Implementacja w `monitor/gpu_monitor.go` korzysta z biblioteki NVIDIA NVML przez `github.com/NVIDIA/go-nvml`.
+GPU collection uses NVIDIA's `go-nvml` bindings. Utilization is exported as a
+ratio and memory use as bytes. Temperature and power are read by the monitor
+but are not currently exported. If NVML cannot initialize or no GPU is
+available, GPU metrics are absent while the HTTP endpoint can still serve job
+metrics.
 
-1. Inicjalizuje NVML.
-2. Odczytuje liczbę urządzeń i pobiera uchwyt do każdego GPU.
-3. Co 5 sekund dla każdego urządzenia próbuje pobrać wykorzystanie GPU i pamięci, zajętą i całkowitą pamięć, temperaturę oraz pobór mocy.
-4. Wypisuje odczytane wartości na standardowe wyjście.
+## Exported metric set
 
-Pamięć jest przeliczana z bajtów na MiB, a moc z miliwatów na waty. Struktura `gpuMetrics` przechowuje:
-
-| Pole | Znaczenie |
+| Metric | Meaning |
 |---|---|
-| `coreUtilPercent` | Wykorzystanie GPU w procentach |
-| `memoryUtilPercent` | Wykorzystanie kontrolera pamięci w procentach |
-| `tempCelsius` | Temperatura GPU w stopniach Celsjusza |
-| `memoryUsedMB` | Zajęta pamięć GPU w MiB |
-| `memoryTotalMB` | Całkowita pamięć GPU w MiB |
-| `powerWatts` | Pobór mocy w watach |
+| `eden_gpu_utilization_ratio` | GPU utilization from 0 to 1 |
+| `eden_gpu_memory_used_bytes` | GPU memory in use |
+| `eden_job_info` | Job metadata labels; value is always 1 |
+| `eden_job_cpu_usage_seconds_total` | Cumulative cgroup CPU time |
+| `eden_job_cpus_allocated` | CPU cores allocated to the job |
+| `eden_job_memory_used_bytes` | Current cgroup memory |
+| `eden_job_memory_peak_bytes` | Peak cgroup memory, when available |
+| `eden_job_memory_allocated_bytes` | Cgroup memory limit, when configured |
 
-Jeśli NVML nie może się zainicjalizować, odczytać liczby urządzeń lub uzyskać uchwytu urządzenia, aplikacja kończy działanie przez `log.Fatalf`. Błędy pojedynczych odczytów w trakcie próbkowania nie są raportowane; dla danego pola pozostaje poprzednia wartość (początkowo zero). Gdy nie ma urządzeń GPU, funkcja monitorująca GPU wraca, ale monitoring CPU/RAM pozostaje uruchomiony.
+The current NVML source assigns an empty `job_id` to every GPU. GPU-to-job
+allocation mapping, GPU count allocation, job time limits, and several other
+metrics proposed by the architecture specification are not implemented.
 
-Wartości nie są przypisywane do jobów Slurma ani PID-ów. `nodeName` nie jest obecnie używany w tym monitorze. Wywołanie `nvml.Shutdown` znajduje się w `defer`, ale przy niekończącej się pętli próbkowania nie zostanie osiągnięte podczas normalnej pracy.
+## Requirements and limitations
 
-## Monitoring cgroups i CPU/RAM
+- The Go version is declared as `1.27.2` in `app/go.mod`.
+- GPU metrics require an NVIDIA driver and working NVML access.
+- Job metrics require Linux cgroup v2, the expected cgroup layout, and
+	`scontrol` on `PATH`.
+- The cgroup path and HTTP listen address are currently hard-coded.
+- The node-name argument is not included in exported metrics.
+- Graceful signal handling and coordinated NVML shutdown are not implemented.
+- The active application does not currently export log files or persist data to
+	a database.
 
-Implementacja w `monitor/cgroups_monitor.go` jest nieukończona. Korzysta ze stałych:
-
-- ścieżka cgroups: `/sys/fs/cgroup/system.slice/slurmstepd.scope/`;
-- prefiks nazw katalogów jobów: `job_`.
-
-Funkcja `initCPUMonitor` tworzy mapę `JobCache` i co 5 sekund wywołuje `get_new_jobs`. Ta funkcja przegląda katalog cgroups i dla nowych katalogów o nazwie zaczynającej się od `job_` próbuje uruchomić `scontrol show job <nazwa_katalogu>`. Dane z odpowiedzi Slurma nie są jeszcze parsowane ani zapisywane do cache.
-
-`parseScontrolValue` jest pomocniczym parserem wartości w formacie `Klucz=wartość`: zwraca tekst do najbliższego białego znaku lub `unknown`, jeśli klucz nie wystąpi. Nie jest jeszcze używany przez pozostały kod.
-
-Struktura `cpuMetrics` wskazuje planowany zakres odczytów:
-
-| Grupa | Pola |
-|---|---|
-| RAM | bieżące zużycie, pamięć anonimowa, szczytowe zużycie, limit i liczba zdarzeń OOM |
-| CPU | łączny czas CPU, czas użytkownika, czas systemowy i czas throttlingu |
-
-W obecnej implementacji te wartości nie są odczytywane z plików cgroups, nie są liczone ani wypisywane. Nie ma też mapowania jobów na procesy/PID-y.
-
-Jeśli odczyt katalogu cgroups lub polecenie `scontrol` zwróci błąd, użyte `log.Fatalln`/`log.Fatalf` kończy cały proces, zamiast pominąć pojedynczy pomiar.
-
-## Wyjście i przechowywanie danych
-
-Jedynym obecnym wyjściem pomiarowym jest standardowe wyjście procesu. Monitor GPU wypisuje znacznik czasu oraz wartości dla kolejnych urządzeń, a monitor CPU/RAM wypisuje znacznik czasu z etykietą `CPU RAM`. Kod nie udostępnia endpointu HTTP, formatu Prometheus, plików logów, bazy danych ani interfejsu do odczytu zebranych wartości.
-
-## Zależności i wymagania środowiskowe
-
-- Wersja Go zadeklarowana w `app/go.mod`: `1.27.2`.
-- Zależność Go: `github.com/NVIDIA/go-nvml` w wersji `v0.13.4-1`.
-- Działający sterownik NVIDIA/NVML jest wymagany do pomiaru GPU.
-- Do wykrywania jobów przewidziane jest polecenie Slurma `scontrol` oraz dostęp do ścieżki cgroups skonfigurowanej w kodzie.
-- Cele `fmt` i `lint` wymagają odpowiednio `goimports` i `golangci-lint` dostępnych w środowisku.
-
-## Aktualne ograniczenia
-
-- Kod monitoringu cgroups nie jest ukończony. W `get_new_jobs` pozostawiono odwołanie `jobdata` bez definicji, a funkcja nie uzupełnia `JobCache`; projekt wymaga dokończenia tej części przed uzyskaniem działającego mapowania jobów.
-- Metryki GPU są zbierane dla urządzeń, nie dla jobów; mapowanie GPU/job/PID nie jest zaimplementowane.
-- Parametr węzła jest wymagany przez CLI, ale nie jest wykorzystywany do identyfikacji węzła w wynikach.
-- Brakuje obsługi sygnałów i kontrolowanego zakończenia procesu.
-- Błędy odczytu pojedynczych metryk GPU są pomijane bez komunikatu.
-- W aktualnym środowisku polecenie `make` dochodzi do `golangci-lint`, który nie może obsłużyć zadeklarowanej wersji Go: użyty linter został zbudowany dla Go 1.23, a projekt deklaruje Go 1.27.2. To ograniczenie narzędzia lintującego; nie jest potwierdzeniem poprawnej kompilacji aplikacji.
-
-Opis przyszłego modelu eksportu metryk, pracy Prometheusa, integracji z systemd oraz docelowego cyklu życia znajduje się w [specyfikacji architektonicznej](eden-job-exporter-spec.md). Są to założenia projektowe i nie należy ich traktować jako funkcji obecnego kodu.
+See the [exporter guide](../app/exporter/README.md),
+[monitor guide](../app/monitor/README.md), and
+[draft architecture specification](eden-job-exporter-spec.md) for related
+details. The specification is a target design, not a feature checklist for the
+current binary.
