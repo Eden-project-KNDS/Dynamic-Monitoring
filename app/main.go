@@ -49,7 +49,7 @@ func main() {
 	go func() {
 		defer s.Wg.Done()
 		<-s.Ctx.Done()
-		fmt.Println("Stopping monitor")
+		fmt.Println("\nStopping monitor")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
