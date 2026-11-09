@@ -1,7 +1,7 @@
 .PHONY: default fmt lint test run build test-job test-metrics clean
 
 BIN=slurm-cgroup-monitor
-LISTEN_ADDRESS=9842
+LISTEN_ADDRESS=9840
 
 # Domyślny cel (wywoływany przez wpisanie samo 'make')
 default: fmt lint
