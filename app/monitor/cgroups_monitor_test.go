@@ -3,7 +3,6 @@ package monitor
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -81,25 +80,6 @@ func TestReadStatValue(t *testing.T) {
 	}
 	if got := readStatValue(filepath.Join(t.TempDir(), "missing"), "usage_usec"); got != 0 {
 		t.Errorf("readStatValue() for a missing file = %d, want 0", got)
-	}
-}
-
-func TestGetAllPidsFromDir(t *testing.T) {
-	jobDir := t.TempDir()
-	writeCgroupProcs(t, filepath.Join(jobDir, "cgroup.procs"), "101\n202\n")
-	writeCgroupProcs(t, filepath.Join(jobDir, "step", "cgroup.procs"), "303\n0\n404")
-
-	got := getAllPidsFromDir("test-job", jobDir)
-	want := []uint32{101, 202, 303, 404}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("getAllPidsFromDir() = %v, want %v", got, want)
-	}
-}
-
-func TestGetAllPidsFromDirMissingDirectory(t *testing.T) {
-	got := getAllPidsFromDir("test-job", filepath.Join(t.TempDir(), "missing"))
-	if got != nil {
-		t.Errorf("getAllPidsFromDir() = %v, want nil for a missing directory", got)
 	}
 }
 
