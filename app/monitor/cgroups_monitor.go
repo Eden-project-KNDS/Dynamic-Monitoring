@@ -3,11 +3,9 @@ package monitor
 import (
 	"bytes"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -44,7 +42,6 @@ type cpuMetrics struct {
 type allJobs struct {
 	nodeName   string
 	JobCache   map[string]jobData
-	JobPid     map[string][]uint32
 	JobMetrics map[string]cpuMetrics
 }
 
@@ -94,7 +91,6 @@ func (jobs *allJobs) getNewJobs() {
 			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
 
 			jobs.JobCache[jobId] = meta
-			jobs.JobPid[jobId] = []uint32{}
 			jobs.JobMetrics[jobId] = cpuMetrics{}
 
 			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
@@ -110,57 +106,10 @@ func (jobs *allJobs) clearOldJobs() {
 		_, err := os.Stat(PATH + PATTERN + jobId)
 		if err != nil { // file doesn't exist -> clearing maps
 			fmt.Printf("Job %s is not longer valid\n", jobId)
-			delete(jobs.JobPid, jobId)
 			delete(jobs.JobMetrics, jobId)
 			delete(jobs.JobCache, jobId)
 		}
 	}
-}
-
-func getAllPids(jobId string) []uint32 {
-	return getAllPidsFromDir(jobId, PATH+PATTERN+jobId)
-}
-
-func getAllPidsFromDir(jobId string, jobDir string) []uint32 {
-	var pids []uint32
-
-	err := filepath.WalkDir(jobDir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "cgroup.procs" {
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				fmt.Printf("Something went wrong when getting file with pids for job %s\n", jobId)
-				return nil
-			}
-			var currentPid uint32 = 0
-			for _, b := range data {
-				if b >= '0' && b <= '9' {
-					currentPid = currentPid*10 + uint32(b-'0')
-				} else if b == '\n' && currentPid > 0 {
-					pids = append(pids, currentPid)
-					currentPid = 0
-				}
-			}
-			if currentPid > 0 {
-				pids = append(pids, currentPid)
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		fmt.Printf("Something went wrong when getting pids for job %s\n", jobId)
-		return nil
-	}
-	return pids
-}
-
-func (jobs *allJobs) getAllPidsFromJob() {
-	fmt.Println("Looking for PIDS")
-	for jobId, _ := range jobs.JobPid {
-		jobs.JobPid[jobId] = getAllPids(jobId)
-		fmt.Printf("PIDS from JOB %s:%v \n", jobId, jobs.JobPid[jobId])
-	}
-
 }
 
 // parseScontrolValue wyciąga wartość klucza w formacie Key=Value z wyjścia scontrol
@@ -208,7 +157,6 @@ func (jobs *allJobs) Jobs() []JobStat {
 
 	jobs.getNewJobs()
 	jobs.clearOldJobs()
-	jobs.getAllPidsFromJob()
 	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
 	stats := make([]JobStat, 0, len(jobs.JobCache))
@@ -239,7 +187,6 @@ func NewAllJobs(nodeName string) *allJobs {
 	return &allJobs{
 		nodeName:   nodeName,
 		JobCache:   make(map[string]jobData),
-		JobPid:     make(map[string][]uint32),
 		JobMetrics: make(map[string]cpuMetrics),
 	}
 }

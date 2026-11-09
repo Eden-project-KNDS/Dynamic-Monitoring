@@ -7,4 +7,4 @@ run: stress_test
 	sbatch --mem=4G -c 1 --time=00:05:00 --wrap="./stress_test"
 
 clean:
-	rm *.out stress_test *.err
+	rm *.out stress_test *.err stress_gpu
