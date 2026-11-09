@@ -1,3 +1,4 @@
 stress_test
 *.out
 *.err
+stress_gpu
