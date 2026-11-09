@@ -18,7 +18,7 @@ __global__ void stress_kernel(float* data, size_t n, int inner_iterations) {
 }
 
 int main(int argc, char** argv) {
-    int duration_sec = 60; // Domyślny czas trwania: 60 sekund
+    int duration_sec = 600; // Domyślny czas trwania: 600 sekund
     if (argc > 1) {
         duration_sec = std::atoi(argv[1]);
     }
