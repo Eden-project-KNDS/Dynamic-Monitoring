@@ -8,10 +8,13 @@ limitations, see [the implementation documentation](../Documentation/DOCUMENTATI
 
 ```bash
 make build
-./slurm-cgroup-monitor <node-name>
+./slurm-cgroup-monitor <node-name> <port>
 ```
 
-The process exposes metrics at `http://localhost:9840/metrics`. It requires
+The process exposes metrics at `http://localhost:<port>/metrics` (`make run`
+uses `gpunode3` and port `9840`). It serves one scrape at a time; a parallel
+request gets `503`. SIGINT or SIGTERM stops the HTTP server and releases NVML.
+For Prometheus and Grafana, see [the deployment guide](../deploy/README.md). It requires
 access to NVIDIA NVML for GPU metrics and, on Slurm nodes, the configured cgroup
 v2 path plus `scontrol` for job discovery. The cgroup path is currently fixed in
 `monitor/cgroups_monitor.go`.
@@ -28,8 +31,9 @@ v2 path plus `scontrol` for job discovery. The cgroup path is currently fixed in
 - `make clean` removes the binary and local `.out` files.
 
 The Slurm targets require a configured cluster environment. The app is a
-prototype: GPU metrics are currently reported without a job association, and
-the implementation does not yet include every metric in the architecture spec.
+prototype: a GPU is associated with a job only while the job has a process on
+the card, and the implementation does not yet include every metric in the
+architecture spec.
 
 See [exporter](exporter/README.md), [monitor](monitor/README.md), and
 [stress workload](stress_test/README.md) for package-specific notes.

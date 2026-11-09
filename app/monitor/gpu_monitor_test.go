@@ -65,17 +65,17 @@ func TestParseCgroupReader(t *testing.T) {
 		{
 			name:  "Slurm cgroups v2 - standardowy format z job_12345",
 			input: "0::/system.slice/slurmstepd.scope/job_12345/step_0\n",
-			want:  "job_12345",
+			want:  "12345",
 		},
 		{
 			name:  "Slurm cgroups v1 - podkatalog z job_654321",
 			input: "12:memory:/slurm/uid_1000/job_654321/step_interactive\n11:devices:/slurm/uid_1000/job_654321\n",
-			want:  "job_654321",
+			want:  "654321",
 		},
 		{
-			name:  "Segment dokładnie o długości 4 znaków (job1)",
+			name:  "Segment bez podkreślnika (job1) to nie katalog joba Slurma",
 			input: "0::/user.slice/job1/test\n",
-			want:  "job1",
+			want:  "",
 		},
 		{
 			name:  "Nazwa 'job' bez dodatkowych znaków (len <= 3) - powinna być zignorowana",
@@ -95,7 +95,7 @@ func TestParseCgroupReader(t *testing.T) {
 		{
 			name:  "Dopasowanie w drugiej linii",
 			input: "1:name=systemd:/\n0::/system.slice/slurmstepd.scope/job_99999\n",
-			want:  "job_99999",
+			want:  "99999",
 		},
 	}
 
@@ -145,7 +145,7 @@ func TestParseProcCgroups_Integration(t *testing.T) {
 		defer f.Close()
 
 		got := parseCgroupReader(f)
-		want := "job_777777"
+		want := "777777"
 		if got != want {
 			t.Errorf("parseCgroupReader() z pliku tymczasowego = %q, want %q", got, want)
 		}

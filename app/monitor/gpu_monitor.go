@@ -86,8 +86,8 @@ func parseCgroupReader(r io.Reader) string {
 		splitLine := strings.Split(line, "/")
 
 		for _, val := range splitLine {
-			if len(val) > 3 && val[:3] == "job" {
-				return val
+			if strings.HasPrefix(val, PATTERN) {
+				return strings.TrimPrefix(val, PATTERN) // job_{number} -> {number}
 			}
 		}
 	}

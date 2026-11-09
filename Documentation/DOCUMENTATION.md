@@ -2,37 +2,40 @@
 
 ## Scope
 
-This document describes the active Go module in `app/`. It is a prototype Slurm
+This document describes the active Go module in `app/`. It is a Slurm
 node monitor that exposes selected NVIDIA GPU and job cgroup data through a
-Prometheus endpoint. It does not implement every feature in the
-[Eden Job Exporter architecture specification](eden-job-exporter-spec.md).
+Prometheus endpoint.
 
 ## Application structure
 
-- `main.go` parses the required node-name argument, creates the data sources,
-	registers the collector, and serves `/metrics` on port `9840`.
-- `monitor/monitor.go` starts the background Slurm job discovery loop.
+- `main.go` parses the node-name and port arguments, creates the data sources,
+	registers the collector, serves `/metrics` (one scrape at a time), and shuts
+	down cleanly on SIGINT or SIGTERM.
+- `synchronization/sync.go` holds the shared context and wait group used for
+	shutdown.
 - `monitor/gpu_monitor.go` initializes NVML and reads GPU statistics when
 	Prometheus scrapes the endpoint.
 - `monitor/cgroups_monitor.go` discovers local Slurm jobs and reads cgroup v2
 	counters and memory values.
 - `exporter/collector.go` converts monitor snapshots into Prometheus metrics.
+- `../deploy/` runs Prometheus and Grafana; see
+	[the deployment guide](../deploy/README.md).
 - `Makefile` defines formatting, lint, test, build, and cluster test targets.
 - `go.mod` defines the Go module `slurm-monitor` and its dependencies.
 
 ## Build and run
 
-The executable requires exactly one argument, the node name:
+The executable requires two arguments, the node name and the listen port:
 
 ```bash
 cd app
 make build
-./slurm-cgroup-monitor <node-name>
+./slurm-cgroup-monitor <node-name> <port>
 ```
 
-The process listens on `:9840`; scrape `http://<node-name>:9840/metrics` from a
-permitted host. The node name is passed to the discovery loop, but is not
-currently exported as a metric label.
+The process listens on `:<port>` on all interfaces; `make run` uses port
+`9840`. The node name is not exported by the monitor; Prometheus adds a `node`
+label from its scrape configuration (`deploy/prometheus/prometheus.yml`).
 
 ### Make targets
 
@@ -50,11 +53,14 @@ submission permissions.
 
 ## Collection behavior
 
-Job discovery runs in the background every five seconds. The monitor scans
-`/sys/fs/cgroup/system.slice/slurmstepd.scope/` for directories named
-`job_<id>`, then runs `scontrol show job <id>` to cache the job's user, account,
-partition, name, and allocated CPU count. When a job disappears from that
-directory, its cached metadata is removed.
+Job discovery runs during each Prometheus scrape; there is no background loop.
+The monitor scans `/sys/fs/cgroup/system.slice/slurmstepd.scope/` for
+directories named `job_<id>`, then runs `scontrol show job <id>` for new jobs to
+cache the job's user, account, partition, name, and allocated CPU count. When a
+job disappears from that directory, its cached metadata is removed. Because a
+scrape updates these maps, the HTTP handler serves one scrape at a time
+(`MaxRequestsInFlight: 1`); a parallel request receives `503` instead of
+racing on the maps.
 
 The exporter reads each cached job's cgroup values during a scrape. It exports
 CPU usage from `cpu.stat` and memory values from `memory.current`,
@@ -64,7 +70,9 @@ zero.
 
 GPU collection uses NVIDIA's `go-nvml` bindings. Utilization is exported as a
 ratio and memory use as bytes. Temperature and power are read by the monitor
-but are not currently exported. If NVML cannot initialize or no GPU is
+but are not currently exported. A GPU's `job_id` is taken from the processes
+running on it (`/proc/<pid>/cgroup`, with the `job_` prefix stripped), so it
+matches `job_id` in the job metrics. If NVML cannot initialize or no GPU is
 available, GPU metrics are absent while the HTTP endpoint can still serve job
 metrics.
 
@@ -81,9 +89,10 @@ metrics.
 | `eden_job_memory_peak_bytes` | Peak cgroup memory, when available |
 | `eden_job_memory_allocated_bytes` | Cgroup memory limit, when configured |
 
-The current NVML source assigns an empty `job_id` to every GPU. GPU-to-job
-allocation mapping, GPU count allocation, job time limits, and several other
-metrics proposed by the architecture specification are not implemented.
+A reserved GPU with no running process has an empty `job_id`; mapping GPUs to
+jobs from the Slurm allocation, GPU count allocation, job time limits, and
+several other metrics proposed by the architecture specification are not
+implemented.
 
 ## Requirements and limitations
 
@@ -91,11 +100,10 @@ metrics proposed by the architecture specification are not implemented.
 - GPU metrics require an NVIDIA driver and working NVML access.
 - Job metrics require Linux cgroup v2, the expected cgroup layout, and
 	`scontrol` on `PATH`.
-- The cgroup path and HTTP listen address are currently hard-coded.
+- The cgroup path is hard-coded; the listen port is a CLI argument.
 - The node-name argument is not included in exported metrics.
-- Graceful signal handling and coordinated NVML shutdown are not implemented.
-- The active application does not currently export log files or persist data to
-	a database.
+- The monitor itself does not persist data. Prometheus in `deploy/` stores the
+	scraped metrics (30-day retention) and Grafana displays them.
 
 See the [exporter guide](../app/exporter/README.md),
 [monitor guide](../app/monitor/README.md), and
