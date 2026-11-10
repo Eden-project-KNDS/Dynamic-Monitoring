@@ -66,7 +66,7 @@ func (jobs *allJobs) getNewJobs() {
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(jobs.JobCache, getJobId(entry.Name())) {
 			jobId := getJobId(entry.Name())
-			cmd := exec.Command("scontrol", "show", "job", jobId)
+			cmd := exec.Command("/usr/local/slurm/latest/bin/scontrol", "show", "job", jobId)
 			var out bytes.Buffer
 			cmd.Stdout = &out
 
