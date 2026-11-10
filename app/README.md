@@ -25,7 +25,7 @@ v2 path plus `scontrol` for job discovery. The cgroup path is currently fixed in
 - `make fmt` formats Go source and imports.
 - `make lint` runs `golangci-lint`.
 - `make test` runs the Go test suite.
-- `make build` builds `slurm-cgroup-monitor`.
+- `make build` builds `slurm-monitor`.
 - `make test-job` submits a short CPU workload through Slurm.
 - `make test-metrics` checks for Eden metrics at the local endpoint.
 - `make clean` removes the binary and local `.out` files.
