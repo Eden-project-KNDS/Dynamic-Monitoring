@@ -1,7 +1,9 @@
 .PHONY: default fmt lint test run build test-job test-metrics clean
 
-BIN=slurm-cgroup-monitor
+BIN=slurm-monitor
 LISTEN_ADDRESS=9840
+SERVICE_FILE=config/slurm-monitor.service
+CONFIG_FILE=config/config.env 
 
 # Domyślny cel (wywoływany przez wpisanie samo 'make')
 default: fmt lint
@@ -38,6 +40,23 @@ test-job:
 test-metrics:
 	@echo "Pobieram metryki 'eden_' z localhost:$(LISTEN_ADDRESS)/metrics..."
 	curl -sS localhost:$(LISTEN_ADDRESS)/metrics | grep -E '^eden_(job|gpu)' || (echo "\n[!] Nie znaleziono metryk. Czy slurm-cgroup-monitor jest włączony i czy zadanie działa?" && exit 1)
+
+daemon_status:
+	systemctl status $(BIN)
+
+
+# setting up linux daemon
+set_daemon: build
+	p $(BIN) /usr/local/bin/
+	chown root:root /usr/local/bin/$(BIN)
+	chmod 755 /usr/local/bin/$(BIN)
+	mkdir -p /etc/$(BIN)
+	cp $(SERVICE_FILE) /etc/systemd/system/
+	cp $(CONFIG_FILE) /etc/$(BIN)/
+	systemctl daemon-reload
+	systemctl enable $(BIN)
+	systemctl start $(BIN)
+	$(MAKE) daemon_status
 
 clean:
 	rm -f *.out $(BIN) 

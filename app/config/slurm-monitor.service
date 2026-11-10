@@ -1,0 +1,24 @@
+[Unit]
+Description=Slurm GPU & CPU Resource Monitor
+After=network.target slurmd.service
+
+[Service]
+Type=simple
+
+# Wczytanie pliku ze zmiennymi (NODE_NAME i LISTEN_ADDRESS)
+EnvironmentFile=/etc/slurm-monitor/config.env
+
+# Przekazanie zmiennych jako argumenty pozycyjne (kolejność ma kluczowe znaczenie!)
+ExecStart=/usr/local/bin/slurm-monitor ${NODE_NAME} ${LISTEN_ADDRESS}
+
+User=root
+Group=root
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
