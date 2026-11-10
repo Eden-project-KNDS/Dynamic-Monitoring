@@ -62,7 +62,7 @@ purpose local monitor.
 ```bash
 cd app
 make build
-./slurm-cgroup-monitor <node-name> <port>
+./slurm-monitor <node-name> <port>
 ```
 
 The HTTP metrics endpoint is available at `http://<node>:<port>/metrics`; the

@@ -8,7 +8,7 @@ limitations, see [the implementation documentation](../Documentation/DOCUMENTATI
 
 ```bash
 make build
-./slurm-cgroup-monitor <node-name> <port>
+./slurm-monitor <node-name> <port>
 ```
 
 The process exposes metrics at `http://localhost:<port>/metrics` (`make run`
