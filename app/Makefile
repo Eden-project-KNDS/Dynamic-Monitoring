@@ -39,7 +39,7 @@ test-job:
 # 2. Odpytuje endpoint Prometheusa i filtruje nasze metryki
 test-metrics:
 	@echo "Pobieram metryki 'eden_' z localhost:$(LISTEN_ADDRESS)/metrics..."
-	curl -sS localhost:$(LISTEN_ADDRESS)/metrics | grep -E '^eden_(job|gpu)' || (echo "\n[!] Nie znaleziono metryk. Czy slurm-cgroup-monitor jest włączony i czy zadanie działa?" && exit 1)
+	curl -sS localhost:$(LISTEN_ADDRESS)/metrics | grep -E '^eden_(job|gpu)' || (echo "\n[!] Nie znaleziono metryk. Czy slurm-monitor jest włączony i czy zadanie działa?" && exit 1)
 
 daemon_status:
 	systemctl status $(BIN)

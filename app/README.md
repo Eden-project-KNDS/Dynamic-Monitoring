@@ -1,39 +1,56 @@
 # Active Monitor Application
 
-This directory contains the active Go module for the Slurm node monitor and its
-Prometheus exporter. For a detailed description of current behavior and known
-limitations, see [the implementation documentation](../Documentation/DOCUMENTATION.md).
+This directory contains the active Go module for the Slurm node monitor and its Prometheus exporter. It is the runtime that exposes GPU and cgroup-based job metrics from a compute node to Prometheus.
+
+For the current implementation details and known limitations, see [Documentation/DOCUMENTATION.md](../Documentation/DOCUMENTATION.md).
+
+## Requirements
+
+- Go 1.27.2 defined in [go.mod](go.mod)
+- NVIDIA drivers and working NVML access
+- Linux cgroup v2 and a Slurm job layout compatible with `/sys/fs/cgroup/system.slice/slurmstepd.scope/`
+- `scontrol` on `PATH`
+- `make`, `goimports`, and `golangci-lint`
 
 ## Build and run
 
 ```bash
+cd app
 make build
-./slurm-cgroup-monitor <node-name> <port>
+./slurm-monitor <node-name> <port>
 ```
 
-The process exposes metrics at `http://localhost:<port>/metrics` (`make run`
-uses `gpunode3` and port `9840`). It serves one scrape at a time; a parallel
-request gets `503`. SIGINT or SIGTERM stops the HTTP server and releases NVML.
-For Prometheus and Grafana, see [the deployment guide](../deploy/README.md). It requires
-access to NVIDIA NVML for GPU metrics and, on Slurm nodes, the configured cgroup
-v2 path plus `scontrol` for job discovery. The cgroup path is currently fixed in
-`monitor/cgroups_monitor.go`.
+The service exposes metrics at `http://<node>:<port>/metrics`. The default local run target is:
+
+```bash
+cd app
+make run
+```
+
+This uses `gpunode3` and port `9840`. The monitor serves one Prometheus scrape at a time and returns `503` for overlapping requests. SIGINT or SIGTERM shuts the HTTP server down cleanly and releases NVML resources.
+
+For the overall deployment and Grafana setup, see [../deploy/README.md](../deploy/README.md).
 
 ## Make targets
 
-- `make` runs `fmt` and then `lint`.
-- `make fmt` formats Go source and imports.
-- `make lint` runs `golangci-lint`.
-- `make test` runs the Go test suite.
-- `make build` builds `slurm-cgroup-monitor`.
-- `make test-job` submits a short CPU workload through Slurm.
-- `make test-metrics` checks for Eden metrics at the local endpoint.
-- `make clean` removes the binary and local `.out` files.
+- `make` runs `fmt` and then `lint`
+- `make fmt` formats Go source and imports
+- `make lint` runs `golangci-lint`
+- `make test` runs the Go test suite
+- `make build` builds the `slurm-monitor` binary
+- `make run` builds and starts the monitor on `gpunode3:9840`
+- `make test-job` submits a short CPU workload through Slurm
+- `make test-metrics` checks for `eden_` metrics on the local endpoint
+- `make clean` removes the binary and local `.out` files
 
-The Slurm targets require a configured cluster environment. The app is a
-prototype: a GPU is associated with a job only while the job has a process on
-the card, and the implementation does not yet include every metric in the
-architecture spec.
+The Slurm-specific targets require a configured cluster environment with the appropriate permissions.
 
-See [exporter](exporter/README.md), [monitor](monitor/README.md), and
-[stress workload](stress_test/README.md) for package-specific notes.
+## Package notes
+
+- [exporter/README.md](exporter/README.md) — Prometheus collector and exported metric contract
+- [monitor/README.md](monitor/README.md) — NVML and cgroup data sources
+- [stress_test/README.md](stress_test/README.md) — test workloads submitted to Slurm
+
+## Current limitations
+
+This monitor is intentionally node-local and prototype-oriented.

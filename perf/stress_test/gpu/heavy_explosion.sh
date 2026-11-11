@@ -18,4 +18,4 @@ fi
 echo "=== Uruchamianie testu na węźle: $(hostname) ==="
 # Parametry: <Czas_w_sekundach> <Liczba_procesów>
 # Uruchamia na 120 sekund w 8 osobnych procesach, każdy z własnym PID
-./heavy_explosion 10000 4
+./heavy_explosion 120 4

@@ -1,15 +1,9 @@
-# Documentation
+# Documentation index
 
-This directory contains the current implementation guide, a draft target
-architecture, and older project notes.
+This directory holds the implementation notes and design drafts for the current monitoring stack.
 
-- [Current implementation](DOCUMENTATION.md): active Go app behavior, metrics,
-  runtime requirements, and limitations.
-- [Eden Job Exporter specification](eden-job-exporter-spec.md): proposed
-  architecture and metric contract. Treat this as a design document; not every
-  item is implemented.
-- [Project notes](Prace.md): a brief record of earlier work.
+- [DOCUMENTATION.md](DOCUMENTATION.md) — the current implementation guide for the active Go monitor, including build steps, data sources, and limitations.
+- [eden-job-exporter-spec.md](eden-job-exporter-spec.md) — a target architecture and metric contract for the exporter. This is a design document and not a full feature checklist for the current binary.
+- [Prace.md](Prace.md) — older project notes retained for historical context.
 
-All documentation in this directory is maintained in English. The architecture
-specification is a draft target design, not a description of fully implemented
-behavior.
+All active guide content is written in English. The specification files describe intended behavior and planning direction, while the implementation guide describes the current state of the code in [app](../app).
