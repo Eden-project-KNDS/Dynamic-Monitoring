@@ -1,0 +1,192 @@
+package monitor
+
+import (
+	"bytes"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// tu znajdują się pliki
+const PATH string = "/sys/fs/cgroup/system.slice/slurmstepd.scope/"
+const PATTERN string = "job_"
+
+type jobData struct {
+	user      string
+	node      string
+	account   string
+	partition string
+	name      string
+	cpus      int
+}
+
+type cpuMetrics struct {
+	// RAM
+	memoryCurrent uint64
+	memoryAnon    uint64
+	memoryPeak    uint64
+	memoryLimit   uint64
+	oomKills      uint64
+
+	// CPU
+	cpuUsageUsec  uint64
+	cpuUserUsec   uint64
+	cpuSystemUsec uint64
+	throttledUsec uint64
+}
+
+type allJobs struct {
+	nodeName   string
+	JobCache   map[string]jobData
+	JobMetrics map[string]cpuMetrics
+}
+
+func keyExists(m map[string]jobData, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
+// this function assumes that folderName starts with job_ prefix
+func getJobId(folderName string) string {
+	return folderName[4:]
+}
+
+func (jobs *allJobs) getNewJobs() {
+
+	entries, err := os.ReadDir(PATH)
+	if err != nil {
+		log.Println("Something went wrong when reading cgroups")
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(jobs.JobCache, getJobId(entry.Name())) {
+			jobId := getJobId(entry.Name())
+			cmd := exec.Command("/usr/local/slurm/latest/bin/scontrol", "show", "job", jobId)
+			var out bytes.Buffer
+			cmd.Stdout = &out
+
+			err := cmd.Run()
+			if err != nil {
+				log.Printf("Error getting scrontrol data from job : %s", jobId)
+				continue
+			}
+
+			meta := jobData{node: jobs.nodeName}
+			output := out.String()
+			rawUser := parseScontrolValue(output, "UserId")
+
+			if idx := strings.Index(rawUser, "("); idx != -1 {
+				meta.user = rawUser[:idx]
+			} else {
+				meta.user = rawUser
+			}
+			meta.account = parseScontrolValue(output, "Account")
+			meta.partition = parseScontrolValue(output, "Partition")
+			meta.name = parseScontrolValue(output, "JobName")
+			meta.cpus, _ = strconv.Atoi(parseScontrolValue(output, "NumCPUs"))
+
+			jobs.JobCache[jobId] = meta
+			jobs.JobMetrics[jobId] = cpuMetrics{}
+
+			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
+				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
+		}
+	}
+
+}
+
+func (jobs *allJobs) clearOldJobs() {
+
+	for jobId, _ := range jobs.JobCache {
+		_, err := os.Stat(PATH + PATTERN + jobId)
+		if err != nil { // file doesn't exist -> clearing maps
+			fmt.Printf("Job %s is not longer valid\n", jobId)
+			delete(jobs.JobMetrics, jobId)
+			delete(jobs.JobCache, jobId)
+		}
+	}
+}
+
+// parseScontrolValue wyciąga wartość klucza w formacie Key=Value z wyjścia scontrol
+func parseScontrolValue(input, key string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`\b%s=([^\s]+)`, regexp.QuoteMeta(key)))
+	matches := re.FindStringSubmatch(input)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return "unknown"
+}
+
+// readUint reads a cgroup file that holds a single number, e.g. memory.current.
+// A missing file (e.g. memory.peak on kernels < 5.19) gives 0.
+func readUint(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+// readStatValue reads one "key value" line from a cgroup file such as cpu.stat.
+func readStatValue(path, key string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == key {
+			value, _ := strconv.ParseUint(fields[1], 10, 64)
+			return value
+		}
+	}
+	return 0
+}
+
+// Jobs returns the jobs found by the discovery loop, with usage read from cgroup right now (on every scrape).
+func (jobs *allJobs) Jobs() []JobStat {
+
+	jobs.getNewJobs()
+	jobs.clearOldJobs()
+	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
+
+	stats := make([]JobStat, 0, len(jobs.JobCache))
+	for jobId, meta := range jobs.JobCache {
+		dir := PATH + PATTERN + jobId + "/"
+		if _, err := os.Stat(dir); err != nil {
+			continue // the job has just ended, the loop will remove it soon
+		}
+
+		stats = append(stats, JobStat{
+			JobID:         jobId,
+			User:          meta.user,
+			Account:       meta.account,
+			Partition:     meta.partition,
+			Name:          meta.name,
+			CPUsAllocated: meta.cpus,
+			CPUUsageUsec:  readStatValue(dir+"cpu.stat", "usage_usec"),
+			MemoryCurrent: readUint(dir + "memory.current"),
+			MemoryPeak:    readUint(dir + "memory.peak"),
+			MemoryLimit:   readUint(dir + "memory.max"),
+		})
+	}
+	return stats
+}
+
+// key is job_id number to search for a dir need to add PATTERN
+func NewAllJobs(nodeName string) *allJobs {
+	return &allJobs{
+		nodeName:   nodeName,
+		JobCache:   make(map[string]jobData),
+		JobMetrics: make(map[string]cpuMetrics),
+	}
+}

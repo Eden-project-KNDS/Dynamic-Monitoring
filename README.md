@@ -1,140 +1,101 @@
-# Eden Cluster Monitor
+# Dynamic Monitoring
 
-A monitoring and resource optimization system for the GPU cluster at the Faculty of Mathematics and Information Science (MiNI), Warsaw University of Technology.
+This repository contains the active Slurm node monitoring stack for the Eden cluster. It gathers GPU activity, cgroup-based CPU and memory usage, and Slurm job metadata, then exposes the data as Prometheus metrics for dashboarding and analysis.
 
----
+## Overview
 
-## Problem
+The active application lives under [app](app). It is a Go-based exporter that runs on a compute node and serves a Prometheus-compatible metrics endpoint at `/metrics`. The stack is designed for Linux Slurm nodes with NVIDIA GPUs and cgroup v2 enabled.
 
-Research teams and students using the Eden cluster (32× A100, 8× H100, 4× P100) routinely overprovision resources — reserving 72-hour time limits for jobs that finish in 4 hours, or allocating 4 GPUs when only 1 is used. This blocks resources for other users without any real need.
+The repository also includes:
 
-The existing monitoring solution generates thousands of log files per month and provides no tooling to help users make better decisions before submitting a job.
+- [deploy](deploy) for the Prometheus and Grafana stack
+- [Documentation](Documentation) for implementation notes and architecture drafts
+- [perf](perf) for profiling and performance analysis notes
+- [_app [deprecated]](_app%20%5Bdeprecated%5D) for an older implementation that is no longer used
 
----
+## Repository layout
 
-## What we're building
+```text
+.
+├── app/                         Active Go monitor and Prometheus exporter
+│   ├── exporter/                Prometheus collector and tests
+│   ├── monitor/                 NVML and Slurm/cgroup data sources
+│   ├── config/                  Daemon and service configuration
+│   ├── stress_test/             Slurm workload helpers
+│   ├── Makefile                Build, test, and cluster checks
+│   └── go.mod                  Go module definition
+├── deploy/                      Prometheus + Grafana via Docker Compose
+├── Documentation/               Implementation notes and architecture drafts
+├── perf/                        Profiling and performance analysis notes
+├── .github/                     CI and repository automation
+├── LICENSE                     Project license
+├── requirements.txt            Python dependency file for tooling/test helpers
+├── commitlint.config.js        Commit convention configuration
+├── README.md                   This project overview
+└── _app [deprecated]/          Legacy implementation kept for reference
+```
 
-| Phase | Component             | Description                                                     |
-| ----- | --------------------- | --------------------------------------------------------------- |
-| 0     | Historical analysis   | `sacct` data analysis to quantify the problem                   |
-| 1     | `eden-estimate` CLI   | Suggests realistic `#SBATCH` parameters based on job history    |
-| 2     | Job efficiency report | Post-job report scoring GPU utilisation, memory, and time usage |
-| 3     | Infrastructure        | SQLite → PostgreSQL, Prometheus, Grafana dashboard              |
-| 4     | Web interface         | FastAPI backend + resource estimator form                       |
+## Requirements
 
----
+- Go 1.27.2 (see [app/go.mod](app/go.mod))
+- NVIDIA drivers and working NVML access for GPU metrics
+- Linux with cgroup v2 and a Slurm node layout matching the app expectations
+- `scontrol` available on `PATH` for job metadata lookup
+- `make`, `goimports`, and `golangci-lint` for the app Makefile targets
 
-## Repository structure (TODO)
+The cgroup discovery path is currently hard-coded in [app/monitor/cgroups_monitor.go](app/monitor/cgroups_monitor.go), so this is a node-local monitor rather than a general-purpose desktop monitor.
 
----
+## Quick start
 
-## Getting started (TODO)
+```bash
+cd app
+make build
+./slurm-monitor <node-name> <port>
+```
 
----
+The app serves metrics at `http://<node>:<port>/metrics`. The default local test command in the Makefile is:
+
+```bash
+cd app
+make run
+```
+
+This starts the exporter on `gpunode3:9840` by default. To view the metrics in Grafana or Prometheus, follow the instructions in [deploy/README.md](deploy/README.md).
+
+## What the exporter exposes
+
+The active collector exports `eden_*` metrics such as:
+
+- GPU utilization and memory usage
+- Slurm job metadata (`eden_job_info`)
+- CPU time and CPU allocation for each job
+- cgroup memory usage and peak values
+
+These metrics are produced by the collector in [app/exporter/collector.go](app/exporter/collector.go) and backed by the sources in [app/monitor](app/monitor).
+
+## Deployment
+
+The deployment stack lives under [deploy](deploy). It runs:
+
+- Prometheus for time-series storage
+- Grafana for dashboards and visualization
+
+The stack is configured through Docker Compose and expects the monitor to already be running on the target Slurm node.
+
+## Documentation index
+
+- [app/README.md](app/README.md) — active application usage and Make targets
+- [Documentation/README.md](Documentation/README.md) — guide to project notes and design docs
+- [Documentation/DOCUMENTATION.md](Documentation/DOCUMENTATION.md) — implementation guide for the current code
+- [Documentation/eden-job-exporter-spec.md](Documentation/eden-job-exporter-spec.md) — draft architecture and target metric contract
+- [Documentation/Prace.md](Documentation/Prace.md) — earlier project notes retained for reference
+
+## Current limitations
+
+- GPU-to-job attribution is based on processes currently running on the GPU; reserved but idle GPUs may still appear with an empty `job_id`.
+- The cgroup path is hard-coded and assumes a specific Slurm/cgroup layout.
+- The project is built for a compute node environment and is not a general-purpose local monitoring solution.
 
 ## Contributing
 
-### Branch strategy
-
-```
-main    <- stable, production-ready code only. Never push directly.
-dev     <- active development. All feature branches merge here first.
-```
-
-All changes go through a pull request. PRs to `main` require 1 approval and passing CI. PRs to `dev` require 1 approval.
-
-### Workflow
-
-```bash
-# Start from an up-to-date dev branch
-git checkout dev
-git pull origin dev
-
-# Create a feature branch
-git checkout -b feat/estimator-sacct-query
-
-# Make changes, commit using Conventional Commits (see below)
-git commit -m "feat(estimator): add sacct query with 90-day window"
-
-# Push and open a PR targeting dev
-git push origin feat/estimator-sacct-query
-```
-
-### Commit message format — Conventional Commits
-
-Every commit must follow this format:
-
-```
-<type>(<scope>): <description>
-```
-
-**Rules:**
-
-- Type and scope must be lowercase
-- Description must be lowercase and start with a verb
-- Description max 72 characters
-- No period at the end
-
-#### Types
-
-| Type       | When to use                                          |
-| ---------- | ---------------------------------------------------- |
-| `feat`     | A new feature or functionality                       |
-| `fix`      | A bug fix                                            |
-| `docs`     | Documentation changes only                           |
-| `refactor` | Code restructuring without changing behaviour        |
-| `test`     | Adding or updating tests                             |
-| `chore`    | Build process, CI, dependencies — no production code |
-| `perf`     | Performance improvements                             |
-
-#### Allowed scopes
-
-| Scope       | What it covers                                    |
-| ----------- | ------------------------------------------------- |
-| `estimator` | `eden-estimate` CLI and sacct querying logic      |
-| `monitor`   | In-job GPU/CPU metric collection                  |
-| `storage`   | SQLite writers, rsync sync, database schema       |
-| `analysis`  | Phase 0 notebooks and data exploration            |
-| `infra`     | Prometheus, Grafana, PostgreSQL, systemd services |
-| `docs`      | Documentation, ADRs, admin proposal               |
-| `ci`        | GitHub Actions workflows, commitlint config       |
-
-#### Examples
-
-```bash
-# ✅ Correct
-feat(estimator): add sacct query with 90-day window
-fix(monitor): handle missing gpu_util when nvidia-smi returns null
-docs(decisions): add ADR-002 for pynvml over gpustat
-refactor(storage): replace log file writer with sqlite3 insert
-test(estimator): add unit tests for median resource calculation
-chore(ci): add pytest workflow for pull requests
-perf(monitor): reduce nvidia-smi subprocess calls using pynvml directly
-
-# ❌ Wrong — scope not on the allowed list
-feat(database): add connection pool
-
-# ❌ Wrong — description starts with uppercase
-fix(monitor): Handle missing gpu_util
-
-# ❌ Wrong — missing scope
-feat: add resource estimator
-
-# ❌ Wrong — unknown type
-update(estimator): improve query performance
-```
-
-### What not to commit
-
-The `.gitignore` excludes the following — never force-add these:
-
-- `*.csv` — sacct exports may contain usernames
-- `*.db` — local SQLite databases
-- `*.log` — raw metric logs
-- `.env` — credentials and configuration secrets
-
----
-
-## Documentation (TODO: partially done)
-
----
+Please keep changes focused, document behavior in the relevant README or implementation guide, and validate the affected app or deployment commands before merging.

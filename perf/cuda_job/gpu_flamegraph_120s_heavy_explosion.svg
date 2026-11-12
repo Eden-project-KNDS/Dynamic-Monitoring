@@ -1,0 +1,1542 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="534" onload="init(evt)" viewBox="0 0 1200 534" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="534.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="517" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="517" > </text>
+<g id="frames">
+<g >
+<title>__x64_sys_epoll_pwait (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="309" width="0.7" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1079.42" y="319.5" ></text>
+</g>
+<g >
+<title>runtime.notesleep (37,821,511 samples, 1.03%)</title><rect x="1097.6" y="373" width="12.1" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1100.56" y="383.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc_nvmlDeviceGetComputeRunningProcesses_v3.abi0 (3,793,733 samples, 0.10%)</title><rect x="149.8" y="293" width="1.2" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="152.79" y="303.5" ></text>
+</g>
+<g >
+<title>os.(*Process).pidfdWait (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="293" width="1.3" height="15.0" fill="rgb(247,196,47)" rx="2" ry="2" />
+<text  x="1008.49" y="303.5" ></text>
+</g>
+<g >
+<title>runtime.futex.abi0 (34,735,761 samples, 0.94%)</title><rect x="1098.6" y="357" width="11.1" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1101.55" y="367.5" ></text>
+</g>
+<g >
+<title>internal/runtime/syscall/linux.Syscall6 (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="373" width="0.7" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1079.42" y="383.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (971,955,342 samples, 26.38%)</title><rect x="692.5" y="165" width="311.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="695.47" y="175.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>runtime.cgocall (3,793,733 samples, 0.10%)</title><rect x="149.8" y="277" width="1.2" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="152.79" y="287.5" ></text>
+</g>
+<g >
+<title>__x64_sys_waitid (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="181" width="1.3" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1008.49" y="191.5" ></text>
+</g>
+<g >
+<title>flush_tlb_mm_range (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="181" width="61.9" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="1015.88" y="191.5" >flush_..</text>
+</g>
+<g >
+<title>slurm-monitor/monitor.(*allJobs).Jobs (9,411,201 samples, 0.26%)</title><rect x="1003.7" y="373" width="3.1" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="1006.75" y="383.5" ></text>
+</g>
+<g >
+<title>runtime.gcTrigger.test (237,993,098 samples, 6.46%)</title><rect x="1109.7" y="389" width="76.2" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="1112.68" y="399.5" >runtime...</text>
+</g>
+<g >
+<title>ctx_sched_in (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="133" width="0.7" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="1079.42" y="143.5" ></text>
+</g>
+<g >
+<title>slurm-monitor/monitor.(*gpuMonitor).getGpuStats (2,666,455,223 samples, 72.37%)</title><rect x="149.8" y="357" width="853.9" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="152.79" y="367.5" >slurm-monitor/monitor.(*gpuMonitor).getGpuStats</text>
+</g>
+<g >
+<title>perf_event_groups_first (2,621,793 samples, 0.07%)</title><rect x="1093.4" y="117" width="0.8" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1096.41" y="127.5" ></text>
+</g>
+<g >
+<title>fpregs_assert_state_consistent (2,647,746 samples, 0.07%)</title><rect x="1102.7" y="293" width="0.8" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1105.70" y="303.5" ></text>
+</g>
+<g >
+<title>rwsem_optimistic_spin (321,973,579 samples, 8.74%)</title><rect x="589.4" y="53" width="103.1" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="592.36" y="63.5" >rwsem_optimi..</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (5,073,246 samples, 0.14%)</title><rect x="1185.9" y="341" width="1.6" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1188.90" y="351.5" ></text>
+</g>
+<g >
+<title>runtime.asmcgocall.abi0 (3,793,733 samples, 0.10%)</title><rect x="149.8" y="261" width="1.2" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="152.79" y="271.5" ></text>
+</g>
+<g >
+<title>hrtimer_reprogram (9,776,653 samples, 0.27%)</title><rect x="1089.4" y="213" width="3.1" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="1092.37" y="223.5" ></text>
+</g>
+<g >
+<title>schedule_hrtimeout_range_clock (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="229" width="0.7" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1079.42" y="239.5" ></text>
+</g>
+<g >
+<title>zap_page_range (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="213" width="61.9" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="1015.88" y="223.5" >zap_pa..</text>
+</g>
+<g >
+<title>do_syscall_64 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="277" width="61.9" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1015.88" y="287.5" >do_sys..</text>
+</g>
+<g >
+<title>x64_sys_call (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="309" width="0.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1080.12" y="319.5" ></text>
+</g>
+<g >
+<title>native_write_msr (554,182 samples, 0.02%)</title><rect x="1106.7" y="133" width="0.2" height="15.0" fill="rgb(237,151,36)" rx="2" ry="2" />
+<text  x="1109.70" y="143.5" ></text>
+</g>
+<g >
+<title>restore_fpregs_from_fpstate (2,494,965 samples, 0.07%)</title><rect x="1099.4" y="261" width="0.8" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1102.40" y="271.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (32,182,104 samples, 0.87%)</title><rect x="1098.6" y="325" width="10.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1101.55" y="335.5" ></text>
+</g>
+<g >
+<title>schedule (5,551,374 samples, 0.15%)</title><rect x="1092.5" y="213" width="1.8" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1095.50" y="223.5" ></text>
+</g>
+<g >
+<title>ep_poll (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="261" width="0.7" height="15.0" fill="rgb(238,151,36)" rx="2" ry="2" />
+<text  x="1079.42" y="271.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.(*nvmlDevice).GetComputeRunningProcesses (3,793,733 samples, 0.10%)</title><rect x="149.8" y="341" width="1.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="152.79" y="351.5" ></text>
+</g>
+<g >
+<title>runtime.usleep.abi0 (7,741,235 samples, 0.21%)</title><rect x="1187.5" y="389" width="2.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1190.52" y="399.5" ></text>
+</g>
+<g >
+<title>runtime.netpoll (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="389" width="0.7" height="15.0" fill="rgb(231,119,28)" rx="2" ry="2" />
+<text  x="1079.42" y="399.5" ></text>
+</g>
+<g >
+<title>switch_fpu_return (2,537,020 samples, 0.07%)</title><rect x="1103.5" y="293" width="0.9" height="15.0" fill="rgb(206,5,1)" rx="2" ry="2" />
+<text  x="1106.55" y="303.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="325" width="6.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1090.84" y="335.5" ></text>
+</g>
+<g >
+<title>__perf_event_task_sched_in (2,720,144 samples, 0.07%)</title><rect x="1093.4" y="165" width="0.9" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1096.41" y="175.5" ></text>
+</g>
+<g >
+<title>runtime.markroot.func1 (8,672,817 samples, 0.24%)</title><rect x="1010.1" y="341" width="2.8" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="1013.10" y="351.5" ></text>
+</g>
+<g >
+<title>dequeue_task (2,831,230 samples, 0.08%)</title><rect x="1092.5" y="181" width="0.9" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="1095.50" y="191.5" ></text>
+</g>
+<g >
+<title>x86_pmu_enable (554,182 samples, 0.02%)</title><rect x="1106.7" y="165" width="0.2" height="15.0" fill="rgb(244,179,43)" rx="2" ry="2" />
+<text  x="1109.70" y="175.5" ></text>
+</g>
+<g >
+<title>slurm-monitor/exporter.(*Collector).collectGPUs (2,666,455,223 samples, 72.37%)</title><rect x="149.8" y="389" width="853.9" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="152.79" y="399.5" >slurm-monitor/exporter.(*Collector).collectGPUs</text>
+</g>
+<g >
+<title>do_epoll_pwait.part.0 (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="293" width="6.5" height="15.0" fill="rgb(248,197,47)" rx="2" ry="2" />
+<text  x="1090.84" y="303.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="181" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="191.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>exc_page_fault (5,065,232 samples, 0.14%)</title><rect x="1074.8" y="373" width="1.6" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1077.80" y="383.5" ></text>
+</g>
+<g >
+<title>__x64_sys_madvise (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="245" width="61.9" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1015.88" y="255.5" >__x64_..</text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="165" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="175.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>dequeue_entity (2,831,230 samples, 0.08%)</title><rect x="1092.5" y="149" width="0.9" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1095.50" y="159.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc_nvmlDeviceGetUtilizationRates.abi0 (971,955,342 samples, 26.38%)</title><rect x="692.5" y="309" width="311.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="695.47" y="319.5" >github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc..</text>
+</g>
+<g >
+<title>runtime.runqsteal (3,172,742 samples, 0.09%)</title><rect x="1094.3" y="389" width="1.0" height="15.0" fill="rgb(227,104,24)" rx="2" ry="2" />
+<text  x="1097.28" y="399.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="213" width="1.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1008.49" y="223.5" ></text>
+</g>
+<g >
+<title>runtime.execute (4,872,208 samples, 0.13%)</title><rect x="1080.0" y="405" width="1.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="1083.03" y="415.5" ></text>
+</g>
+<g >
+<title>rwsem_down_write_slowpath (321,973,579 samples, 8.74%)</title><rect x="589.4" y="69" width="103.1" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="592.36" y="79.5" >rwsem_down_w..</text>
+</g>
+<g >
+<title>__rseq_handle_notify_resume (2,437,385 samples, 0.07%)</title><rect x="1187.5" y="309" width="0.8" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="1190.52" y="319.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.(*nvmlDevice).GetTemperature (692,544,834 samples, 18.80%)</title><rect x="470.7" y="341" width="221.8" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="473.68" y="351.5" >github.com/NVIDIA/go-nvml/pkg..</text>
+</g>
+<g >
+<title>syscall_exit_to_user_mode (5,048,525 samples, 0.14%)</title><rect x="1185.9" y="309" width="1.6" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="1188.90" y="319.5" ></text>
+</g>
+<g >
+<title>runtime.asyncPreempt2.func1 (5,065,232 samples, 0.14%)</title><rect x="1074.8" y="437" width="1.6" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="1077.80" y="447.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDeviceGetComputeRunningProcesses_v3 (3,793,733 samples, 0.10%)</title><rect x="149.8" y="309" width="1.2" height="15.0" fill="rgb(222,78,18)" rx="2" ry="2" />
+<text  x="152.79" y="319.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (3,770,297 samples, 0.10%)</title><rect x="149.8" y="229" width="1.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="152.79" y="239.5" ></text>
+</g>
+<g >
+<title>runtime.memclrNoHeapPointers (5,065,232 samples, 0.14%)</title><rect x="1074.8" y="405" width="1.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1077.80" y="415.5" ></text>
+</g>
+<g >
+<title>fpu__alloc_mathframe (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="261" width="1.6" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="1077.81" y="271.5" ></text>
+</g>
+<g >
+<title>__schedule (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="197" width="0.7" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1079.42" y="207.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="293" width="61.9" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1015.88" y="303.5" >entry_..</text>
+</g>
+<g >
+<title>_copy_from_user (5,263,710 samples, 0.14%)</title><rect x="1188.3" y="309" width="1.7" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1191.30" y="319.5" ></text>
+</g>
+<g >
+<title>futex_wait_queue_me (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="245" width="0.7" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1080.12" y="255.5" ></text>
+</g>
+<g >
+<title>runtime.goexit0 (4,315,095 samples, 0.12%)</title><rect x="1076.4" y="437" width="1.4" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="1079.42" y="447.5" ></text>
+</g>
+<g >
+<title>runtime.(*pageAlloc).scavenge (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="373" width="61.9" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="1015.88" y="383.5" >runtim..</text>
+</g>
+<g >
+<title>nvmlDeviceGetPowerUsage (998,161,314 samples, 27.09%)</title><rect x="151.0" y="245" width="319.7" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="154.01" y="255.5" >nvmlDeviceGetPowerUsage</text>
+</g>
+<g >
+<title>on_each_cpu_cond_mask (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="149" width="61.9" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1015.88" y="159.5" >on_eac..</text>
+</g>
+<g >
+<title>slurm-monitor/exporter.(*Collector).Collect (2,675,866,424 samples, 72.62%)</title><rect x="149.8" y="405" width="857.0" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="152.79" y="415.5" >slurm-monitor/exporter.(*Collector).Collect</text>
+</g>
+<g >
+<title>__x64_sys_futex (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="293" width="0.7" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="1080.12" y="303.5" ></text>
+</g>
+<g >
+<title>runtime.stopm (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="389" width="0.7" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1080.12" y="399.5" ></text>
+</g>
+<g >
+<title>futex_wait (11,002,361 samples, 0.30%)</title><rect x="1105.3" y="261" width="3.6" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1108.34" y="271.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (971,955,342 samples, 26.38%)</title><rect x="692.5" y="229" width="311.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="695.47" y="239.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="341" width="0.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1080.12" y="351.5" ></text>
+</g>
+<g >
+<title>slurm-monitor/exporter.(*Collector).collectJobs (9,411,201 samples, 0.26%)</title><rect x="1003.7" y="389" width="3.1" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1006.75" y="399.5" ></text>
+</g>
+<g >
+<title>runtime.bgscavenge (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="421" width="61.9" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1015.88" y="431.5" >runtim..</text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (998,161,314 samples, 27.09%)</title><rect x="151.0" y="165" width="319.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="154.01" y="175.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.(*nvmlDevice).GetUtilizationRates (971,955,342 samples, 26.38%)</title><rect x="692.5" y="341" width="311.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="695.47" y="351.5" >github.com/NVIDIA/go-nvml/pkg/nvml.(*nvml..</text>
+</g>
+<g >
+<title>__schedule (8,850,829 samples, 0.24%)</title><rect x="1106.0" y="213" width="2.9" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1109.02" y="223.5" ></text>
+</g>
+<g >
+<title>do_futex (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="277" width="0.7" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1080.12" y="287.5" ></text>
+</g>
+<g >
+<title>__get_user_8 (2,437,385 samples, 0.07%)</title><rect x="1187.5" y="277" width="0.8" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="1190.52" y="287.5" ></text>
+</g>
+<g >
+<title>intel_pmu_nhm_enable_all (554,182 samples, 0.02%)</title><rect x="1106.7" y="149" width="0.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="1109.70" y="159.5" ></text>
+</g>
+<g >
+<title>schedule (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="213" width="0.7" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1079.42" y="223.5" ></text>
+</g>
+<g >
+<title>internal/runtime/syscall/linux.Syscall6 (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="245" width="1.3" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1008.49" y="255.5" ></text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (8,850,829 samples, 0.24%)</title><rect x="1106.0" y="197" width="2.9" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1109.02" y="207.5" ></text>
+</g>
+<g >
+<title>__x64_sys_futex (14,051,199 samples, 0.38%)</title><rect x="1104.4" y="293" width="4.5" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="1107.36" y="303.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="357" width="6.5" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1090.84" y="367.5" ></text>
+</g>
+<g >
+<title>__sysvec_call_function (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="149" width="0.8" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1111.11" y="159.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (5,065,232 samples, 0.14%)</title><rect x="1074.8" y="389" width="1.6" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="1077.80" y="399.5" ></text>
+</g>
+<g >
+<title>visit_groups_merge.constprop.0.isra.0 (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="117" width="0.7" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="1079.42" y="127.5" ></text>
+</g>
+<g >
+<title>tlb_finish_mmu (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="197" width="61.9" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="1015.88" y="207.5" >tlb_fi..</text>
+</g>
+<g >
+<title>os/exec.(*Cmd).Wait (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="325" width="1.3" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="1008.49" y="335.5" ></text>
+</g>
+<g >
+<title>irqentry_exit_to_user_mode (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="341" width="1.6" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1077.81" y="351.5" ></text>
+</g>
+<g >
+<title>slurm-monitor/monitor.(*gpuMonitor).GPUs (2,666,455,223 samples, 72.37%)</title><rect x="149.8" y="373" width="853.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="152.79" y="383.5" >slurm-monitor/monitor.(*gpuMonitor).GPUs</text>
+</g>
+<g >
+<title>hrtimer_interrupt (3,837,682 samples, 0.10%)</title><rect x="1106.9" y="133" width="1.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1109.88" y="143.5" ></text>
+</g>
+<g >
+<title>all (3,684,528,999 samples, 100%)</title><rect x="10.0" y="485" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="495.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="229" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="239.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>internal/runtime/syscall/linux.Syscall6 (25,327,354 samples, 0.69%)</title><rect x="1086.2" y="373" width="8.1" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1089.17" y="383.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (2,553,657 samples, 0.07%)</title><rect x="1108.9" y="341" width="0.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1111.86" y="351.5" ></text>
+</g>
+<g >
+<title>perf_event_sched_in (2,621,793 samples, 0.07%)</title><rect x="1093.4" y="149" width="0.8" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="1096.41" y="159.5" ></text>
+</g>
+<g >
+<title>dequeue_task_fair (2,831,230 samples, 0.08%)</title><rect x="1092.5" y="165" width="0.9" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1095.50" y="175.5" ></text>
+</g>
+<g >
+<title>arch_exit_to_user_mode_prepare.constprop.0 (5,048,525 samples, 0.14%)</title><rect x="1185.9" y="293" width="1.6" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1188.90" y="303.5" ></text>
+</g>
+<g >
+<title>runtime.asmcgocall.abi0 (692,544,834 samples, 18.80%)</title><rect x="470.7" y="277" width="221.8" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="473.68" y="287.5" >runtime.asmcgocall.abi0</text>
+</g>
+<g >
+<title>__x64_sys_epoll_pwait (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="309" width="6.5" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1090.84" y="319.5" ></text>
+</g>
+<g >
+<title>_nv059494rm (215,440,220 samples, 5.85%)</title><rect x="934.7" y="133" width="69.0" height="15.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="937.75" y="143.5" >_nv0594..</text>
+</g>
+<g >
+<title>sysvec_call_function (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="165" width="0.8" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1111.11" y="175.5" ></text>
+</g>
+<g >
+<title>generic_smp_call_function_single_interrupt (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="133" width="0.8" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="1111.11" y="143.5" ></text>
+</g>
+<g >
+<title>__x64_sys_nanosleep (5,303,850 samples, 0.14%)</title><rect x="1188.3" y="325" width="1.7" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="1191.30" y="335.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc_nvmlDeviceGetTemperature.abi0 (692,544,834 samples, 18.80%)</title><rect x="470.7" y="309" width="221.8" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="473.68" y="319.5" >github.com/NVIDIA/go-nvml/pkg..</text>
+</g>
+<g >
+<title>exit_to_user_mode_loop (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="325" width="1.6" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="1077.81" y="335.5" ></text>
+</g>
+<g >
+<title>futex_wait_queue_me (11,002,361 samples, 0.30%)</title><rect x="1105.3" y="245" width="3.6" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1108.34" y="255.5" ></text>
+</g>
+<g >
+<title>os/exec.(*Cmd).Start (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="325" width="1.8" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1006.75" y="335.5" ></text>
+</g>
+<g >
+<title>runtime.madvise.abi0 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="309" width="61.9" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="1015.88" y="319.5" >runtim..</text>
+</g>
+<g >
+<title>runtime.gcBgMarkWorker.func2 (15,373,163 samples, 0.42%)</title><rect x="1008.0" y="389" width="4.9" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1010.95" y="399.5" ></text>
+</g>
+<g >
+<title>do_epoll_pwait.part.0 (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="293" width="0.7" height="15.0" fill="rgb(248,197,47)" rx="2" ry="2" />
+<text  x="1079.42" y="303.5" ></text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="181" width="0.7" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1079.42" y="191.5" ></text>
+</g>
+<g >
+<title>do_futex (11,002,361 samples, 0.30%)</title><rect x="1105.3" y="277" width="3.6" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1108.34" y="287.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_call_function (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="181" width="0.8" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="1111.11" y="191.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (3,837,682 samples, 0.10%)</title><rect x="1106.9" y="149" width="1.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1109.88" y="159.5" ></text>
+</g>
+<g >
+<title>runtime.netpoll (25,327,354 samples, 0.69%)</title><rect x="1086.2" y="389" width="8.1" height="15.0" fill="rgb(231,119,28)" rx="2" ry="2" />
+<text  x="1089.17" y="399.5" ></text>
+</g>
+<g >
+<title>runtime.park_m (99,523,555 samples, 2.70%)</title><rect x="1077.8" y="437" width="31.9" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="1080.80" y="447.5" >ru..</text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc_nvmlDeviceGetPowerUsage.abi0 (998,161,314 samples, 27.09%)</title><rect x="151.0" y="309" width="319.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="154.01" y="319.5" >github.com/NVIDIA/go-nvml/pkg/nvml._Cfunc_n..</text>
+</g>
+<g >
+<title>runtime.gcenable.gowrap2 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="437" width="61.9" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1015.88" y="447.5" >runtim..</text>
+</g>
+<g >
+<title>__perf_event_task_sched_in (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="165" width="0.7" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1079.42" y="175.5" ></text>
+</g>
+<g >
+<title>schedule_hrtimeout_range (15,328,027 samples, 0.42%)</title><rect x="1089.4" y="245" width="4.9" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="1092.37" y="255.5" ></text>
+</g>
+<g >
+<title>schedule_hrtimeout_range (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="245" width="0.7" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="1079.42" y="255.5" ></text>
+</g>
+<g >
+<title>wait_task_zombie (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="101" width="1.3" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="1008.50" y="111.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="213" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="223.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>syscall_exit_to_user_mode (18,130,905 samples, 0.49%)</title><rect x="1098.6" y="309" width="5.8" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="1101.55" y="319.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.deviceGetComputeRunningProcesses_v3 (3,793,733 samples, 0.10%)</title><rect x="149.8" y="325" width="1.2" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="152.79" y="335.5" ></text>
+</g>
+<g >
+<title>runtime.(*unwinder).next (8,672,817 samples, 0.24%)</title><rect x="1010.1" y="325" width="2.8" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1013.10" y="335.5" ></text>
+</g>
+<g >
+<title>syscall.forkExec (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="277" width="1.8" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="1006.75" y="287.5" ></text>
+</g>
+<g >
+<title>runtime.futex.abi0 (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="357" width="0.7" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1080.12" y="367.5" ></text>
+</g>
+<g >
+<title>runtime.cgocall (971,955,342 samples, 26.38%)</title><rect x="692.5" y="293" width="311.2" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="695.47" y="303.5" >runtime.cgocall</text>
+</g>
+<g >
+<title>x64_sys_call (5,303,850 samples, 0.14%)</title><rect x="1188.3" y="341" width="1.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1191.30" y="351.5" ></text>
+</g>
+<g >
+<title>ioctl (692,544,834 samples, 18.80%)</title><rect x="470.7" y="133" width="221.8" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="473.68" y="143.5" >ioctl</text>
+</g>
+<g >
+<title>runtime.stopm (40,305,968 samples, 1.09%)</title><rect x="1096.8" y="389" width="12.9" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1099.77" y="399.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (998,161,314 samples, 27.09%)</title><rect x="151.0" y="181" width="319.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="154.01" y="191.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>schedule (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="229" width="0.7" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1080.12" y="239.5" ></text>
+</g>
+<g >
+<title>_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetTemperature (692,544,834 samples, 18.80%)</title><rect x="470.7" y="261" width="221.8" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="473.68" y="271.5" >_cgo_f17f7993e2a7_Cfunc_nvmlD..</text>
+</g>
+<g >
+<title>ctx_sched_in (2,621,793 samples, 0.07%)</title><rect x="1093.4" y="133" width="0.8" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="1096.41" y="143.5" ></text>
+</g>
+<g >
+<title>rwsem_spin_on_owner (321,973,579 samples, 8.74%)</title><rect x="589.4" y="37" width="103.1" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="592.36" y="47.5" >rwsem_spin_o..</text>
+</g>
+<g >
+<title>runtime.systemstack.abi0 (15,373,163 samples, 0.42%)</title><rect x="1008.0" y="405" width="4.9" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="1010.95" y="415.5" ></text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="197" width="0.7" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1080.12" y="207.5" ></text>
+</g>
+<g >
+<title>wait_consider_task (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="117" width="1.3" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="1008.50" y="127.5" ></text>
+</g>
+<g >
+<title>os.(*Process).wait (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="309" width="1.3" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1008.49" y="319.5" ></text>
+</g>
+<g >
+<title>do_madvise.part.0 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="229" width="61.9" height="15.0" fill="rgb(233,133,31)" rx="2" ry="2" />
+<text  x="1015.88" y="239.5" >do_mad..</text>
+</g>
+<g >
+<title>__fget_files (4,785,322 samples, 0.13%)</title><rect x="1087.8" y="229" width="1.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1090.84" y="239.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="357" width="0.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1079.42" y="367.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (7,741,235 samples, 0.21%)</title><rect x="1187.5" y="357" width="2.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1190.52" y="367.5" ></text>
+</g>
+<g >
+<title>native_flush_tlb_multi (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="165" width="61.9" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1015.88" y="175.5" >native..</text>
+</g>
+<g >
+<title>github.com/prometheus/client_golang/prometheus.safeCollect (2,675,866,424 samples, 72.62%)</title><rect x="149.8" y="421" width="857.0" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="152.79" y="431.5" >github.com/prometheus/client_golang/prometheus.safeCollect</text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (998,161,314 samples, 27.09%)</title><rect x="151.0" y="229" width="319.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="154.01" y="239.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>do_wait (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="133" width="1.3" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="1008.49" y="143.5" ></text>
+</g>
+<g >
+<title>runtime.goexit.abi0 (2,888,317,730 samples, 78.39%)</title><rect x="149.8" y="453" width="925.0" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="152.79" y="463.5" >runtime.goexit.abi0</text>
+</g>
+<g >
+<title>os/exec.(*Cmd).Run (9,411,201 samples, 0.26%)</title><rect x="1003.7" y="341" width="3.1" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="1006.75" y="351.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (971,955,342 samples, 26.38%)</title><rect x="692.5" y="213" width="311.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="695.47" y="223.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>runtime.cgocall (998,161,314 samples, 27.09%)</title><rect x="151.0" y="293" width="319.7" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="154.01" y="303.5" >runtime.cgocall</text>
+</g>
+<g >
+<title>__cleanup_sighand (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="53" width="1.3" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="1008.50" y="63.5" ></text>
+</g>
+<g >
+<title>event_sched_in (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="85" width="0.7" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1079.42" y="95.5" ></text>
+</g>
+<g >
+<title>runtime.(*pageAlloc).scavengeOne (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="325" width="61.9" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="1015.88" y="335.5" >runtim..</text>
+</g>
+<g >
+<title>runtime.systemstack.abi0 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="357" width="61.9" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="1015.88" y="367.5" >runtim..</text>
+</g>
+<g >
+<title>runtime.cgocall (692,544,834 samples, 18.80%)</title><rect x="470.7" y="293" width="221.8" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="473.68" y="303.5" >runtime.cgocall</text>
+</g>
+<g >
+<title>_nv052729rm (321,973,579 samples, 8.74%)</title><rect x="589.4" y="117" width="103.1" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="592.36" y="127.5" >_nv052729rm</text>
+</g>
+<g >
+<title>[[vdso]] (3,726,467 samples, 0.10%)</title><rect x="1006.8" y="405" width="1.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1009.76" y="415.5" ></text>
+</g>
+<g >
+<title>nvmlDeviceGetTemperature (692,544,834 samples, 18.80%)</title><rect x="470.7" y="245" width="221.8" height="15.0" fill="rgb(221,78,18)" rx="2" ry="2" />
+<text  x="473.68" y="255.5" >nvmlDeviceGetTemperature</text>
+</g>
+<g >
+<title>runtime.schedule (4,315,095 samples, 0.12%)</title><rect x="1076.4" y="421" width="1.4" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="1079.42" y="431.5" ></text>
+</g>
+<g >
+<title>runtime.(*scavengerState).run (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="405" width="61.9" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="1015.88" y="415.5" >runtim..</text>
+</g>
+<g >
+<title>x64_sys_call (14,051,199 samples, 0.38%)</title><rect x="1104.4" y="309" width="4.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1107.36" y="319.5" ></text>
+</g>
+<g >
+<title>os.startProcess (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="293" width="1.8" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1006.75" y="303.5" ></text>
+</g>
+<g >
+<title>kmem_cache_free (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="37" width="1.3" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="1008.50" y="47.5" ></text>
+</g>
+<g >
+<title>arch_do_signal_or_restart (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="309" width="1.6" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="1077.81" y="319.5" ></text>
+</g>
+<g >
+<title>runtime.acquirep (2,484,457 samples, 0.07%)</title><rect x="1096.8" y="373" width="0.8" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="1099.77" y="383.5" ></text>
+</g>
+<g >
+<title>do_epoll_wait (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="277" width="0.7" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1079.42" y="287.5" ></text>
+</g>
+<g >
+<title>os_acquire_rwlock_write (321,973,579 samples, 8.74%)</title><rect x="589.4" y="101" width="103.1" height="15.0" fill="rgb(207,12,2)" rx="2" ry="2" />
+<text  x="592.36" y="111.5" >os_acquire_r..</text>
+</g>
+<g >
+<title>runtime.findRunnable (4,315,095 samples, 0.12%)</title><rect x="1076.4" y="405" width="1.4" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="1079.42" y="415.5" ></text>
+</g>
+<g >
+<title>runtime.schedule (99,523,555 samples, 2.70%)</title><rect x="1077.8" y="421" width="31.9" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="1080.80" y="431.5" >ru..</text>
+</g>
+<g >
+<title>ep_poll (15,328,027 samples, 0.42%)</title><rect x="1089.4" y="261" width="4.9" height="15.0" fill="rgb(238,151,36)" rx="2" ry="2" />
+<text  x="1092.37" y="271.5" ></text>
+</g>
+<g >
+<title>schedule (8,850,829 samples, 0.24%)</title><rect x="1106.0" y="229" width="2.9" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="1109.02" y="239.5" ></text>
+</g>
+<g >
+<title>syscall_exit_to_user_mode (2,437,385 samples, 0.07%)</title><rect x="1187.5" y="341" width="0.8" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="1190.52" y="351.5" ></text>
+</g>
+<g >
+<title>__schedule (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="213" width="0.7" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1080.12" y="223.5" ></text>
+</g>
+<g >
+<title>syscall.rawVforkSyscall.abi0 (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="245" width="1.8" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="1006.75" y="255.5" ></text>
+</g>
+<g >
+<title>ioctl (998,161,314 samples, 27.09%)</title><rect x="151.0" y="149" width="319.7" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="154.01" y="159.5" >ioctl</text>
+</g>
+<g >
+<title>perf_swevent_add (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="69" width="0.7" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1079.42" y="79.5" ></text>
+</g>
+<g >
+<title>__perf_event_task_sched_in (554,182 samples, 0.02%)</title><rect x="1106.7" y="181" width="0.2" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="1109.70" y="191.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (3,837,682 samples, 0.10%)</title><rect x="1106.9" y="181" width="1.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1109.88" y="191.5" ></text>
+</g>
+<g >
+<title>runtime.futex.abi0 (5,073,246 samples, 0.14%)</title><rect x="1185.9" y="357" width="1.6" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1188.90" y="367.5" ></text>
+</g>
+<g >
+<title>__exit_signal (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="69" width="1.3" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="1008.50" y="79.5" ></text>
+</g>
+<g >
+<title>github.com/prometheus/client_golang/prometheus.(*Registry).Gather.func1 (2,675,866,424 samples, 72.62%)</title><rect x="149.8" y="437" width="857.0" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="152.79" y="447.5" >github.com/prometheus/client_golang/prometheus.(*Registry).Gather.func1</text>
+</g>
+<g >
+<title>runtime.notetsleep (5,073,246 samples, 0.14%)</title><rect x="1185.9" y="389" width="1.6" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="1188.90" y="399.5" ></text>
+</g>
+<g >
+<title>_nv049612rm (756,515,122 samples, 20.53%)</title><rect x="692.5" y="133" width="242.2" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="695.47" y="143.5" >_nv049612rm</text>
+</g>
+<g >
+<title>_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetUtilizationRates (971,955,342 samples, 26.38%)</title><rect x="692.5" y="261" width="311.2" height="15.0" fill="rgb(238,151,36)" rx="2" ry="2" />
+<text  x="695.47" y="271.5" >_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetUtil..</text>
+</g>
+<g >
+<title>native_flush_tlb_one_user (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="85" width="0.8" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="1111.11" y="95.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="325" width="0.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1080.12" y="335.5" ></text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (2,720,144 samples, 0.07%)</title><rect x="1093.4" y="181" width="0.9" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1096.41" y="191.5" ></text>
+</g>
+<g >
+<title>perf_event_sched_in (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="149" width="0.7" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="1079.42" y="159.5" ></text>
+</g>
+<g >
+<title>runtime.(*mcache).prepareForSweep (2,484,457 samples, 0.07%)</title><rect x="1096.8" y="341" width="0.8" height="15.0" fill="rgb(213,37,9)" rx="2" ry="2" />
+<text  x="1099.77" y="351.5" ></text>
+</g>
+<g >
+<title>runtime.mstart0 (250,807,579 samples, 6.81%)</title><rect x="1109.7" y="437" width="80.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1112.68" y="447.5" >runtime.m..</text>
+</g>
+<g >
+<title>[unknown] (436,499,808 samples, 11.85%)</title><rect x="10.0" y="453" width="139.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.00" y="463.5" >[unknown]</text>
+</g>
+<g >
+<title>_nv049612rm (998,161,314 samples, 27.09%)</title><rect x="151.0" y="133" width="319.7" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="154.01" y="143.5" >_nv049612rm</text>
+</g>
+<g >
+<title>slurm-cgroup-mo (3,248,029,191 samples, 88.15%)</title><rect x="149.8" y="469" width="1040.2" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="152.79" y="479.5" >slurm-cgroup-mo</text>
+</g>
+<g >
+<title>_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetComputeRunningProcesses_v3 (3,793,733 samples, 0.10%)</title><rect x="149.8" y="245" width="1.2" height="15.0" fill="rgb(216,54,13)" rx="2" ry="2" />
+<text  x="152.79" y="255.5" ></text>
+</g>
+<g >
+<title>__do_sys_waitid (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="165" width="1.3" height="15.0" fill="rgb(231,119,28)" rx="2" ry="2" />
+<text  x="1008.49" y="175.5" ></text>
+</g>
+<g >
+<title>runtime.gcBgMarkWorker (19,099,630 samples, 0.52%)</title><rect x="1006.8" y="421" width="6.1" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="1009.76" y="431.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="229" width="1.3" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1008.49" y="239.5" ></text>
+</g>
+<g >
+<title>slurm-monitor/monitor.(*allJobs).getNewJobs (9,411,201 samples, 0.26%)</title><rect x="1003.7" y="357" width="3.1" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1006.75" y="367.5" ></text>
+</g>
+<g >
+<title>arch_exit_to_user_mode_prepare.constprop.0 (5,130,400 samples, 0.14%)</title><rect x="1098.6" y="293" width="1.6" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1101.55" y="303.5" ></text>
+</g>
+<g >
+<title>syscall.Syscall6 (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="261" width="1.3" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1008.49" y="271.5" ></text>
+</g>
+<g >
+<title>runtime.notesleep (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="373" width="0.7" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1080.12" y="383.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (3,837,682 samples, 0.10%)</title><rect x="1106.9" y="165" width="1.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1109.88" y="175.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (5,073,246 samples, 0.14%)</title><rect x="1185.9" y="325" width="1.6" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1188.90" y="335.5" ></text>
+</g>
+<g >
+<title>flush_smp_call_function_queue (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="117" width="0.8" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="1111.11" y="127.5" ></text>
+</g>
+<g >
+<title>__fget_light (4,785,322 samples, 0.13%)</title><rect x="1087.8" y="245" width="1.6" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="1090.84" y="255.5" ></text>
+</g>
+<g >
+<title>os.StartProcess (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="309" width="1.8" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1006.75" y="319.5" ></text>
+</g>
+<g >
+<title>_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetPowerUsage (998,161,314 samples, 27.09%)</title><rect x="151.0" y="261" width="319.7" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="154.01" y="271.5" >_cgo_f17f7993e2a7_Cfunc_nvmlDeviceGetPowerU..</text>
+</g>
+<g >
+<title>runtime.sysmon (250,807,579 samples, 6.81%)</title><rect x="1109.7" y="405" width="80.3" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="1112.68" y="415.5" >runtime.s..</text>
+</g>
+<g >
+<title>internal/syscall/unix.Waitid (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="277" width="1.3" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="1008.49" y="287.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDeviceGetUtilizationRates (971,955,342 samples, 26.38%)</title><rect x="692.5" y="325" width="311.2" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="695.47" y="335.5" >github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDe..</text>
+</g>
+<g >
+<title>down_write (321,973,579 samples, 8.74%)</title><rect x="589.4" y="85" width="103.1" height="15.0" fill="rgb(222,79,18)" rx="2" ry="2" />
+<text  x="592.36" y="95.5" >down_write</text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (971,955,342 samples, 26.38%)</title><rect x="692.5" y="197" width="311.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="695.47" y="207.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>syscall.forkAndExecInChild (5,454,096 samples, 0.15%)</title><rect x="1003.7" y="261" width="1.8" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1006.75" y="271.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="149" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="159.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>__schedule (5,551,374 samples, 0.15%)</title><rect x="1092.5" y="197" width="1.8" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1095.50" y="207.5" ></text>
+</g>
+<g >
+<title>futex_wait (2,126,850 samples, 0.06%)</title><rect x="1077.1" y="261" width="0.7" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1080.12" y="271.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDeviceGetTemperature (692,544,834 samples, 18.80%)</title><rect x="470.7" y="325" width="221.8" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="473.68" y="335.5" >github.com/NVIDIA/go-nvml/pkg..</text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (971,955,342 samples, 26.38%)</title><rect x="692.5" y="181" width="311.2" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="695.47" y="191.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>irqentry_exit (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="357" width="1.6" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="1077.81" y="367.5" ></text>
+</g>
+<g >
+<title>perf_event_update_userpage (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="53" width="0.7" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1079.42" y="63.5" ></text>
+</g>
+<g >
+<title>flush_tlb_func (2,344,394 samples, 0.06%)</title><rect x="1108.1" y="101" width="0.8" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1111.11" y="111.5" ></text>
+</g>
+<g >
+<title>scontrol (436,499,808 samples, 11.85%)</title><rect x="10.0" y="469" width="139.8" height="15.0" fill="rgb(253,220,52)" rx="2" ry="2" />
+<text  x="13.00" y="479.5" >scontrol</text>
+</g>
+<g >
+<title>do_syscall_64 (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="341" width="0.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1079.42" y="351.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (998,161,314 samples, 27.09%)</title><rect x="151.0" y="197" width="319.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="154.01" y="207.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>runtime.(*timers).check (9,660,723 samples, 0.26%)</title><rect x="1083.1" y="389" width="3.1" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1086.07" y="399.5" ></text>
+</g>
+<g >
+<title>runtime.acquirepNoTrace (2,484,457 samples, 0.07%)</title><rect x="1096.8" y="357" width="0.8" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1099.77" y="367.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (692,544,834 samples, 18.80%)</title><rect x="470.7" y="197" width="221.8" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="473.68" y="207.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+<g >
+<title>__setup_rt_frame (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="277" width="1.6" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1077.81" y="287.5" ></text>
+</g>
+<g >
+<title>__fdget (4,785,322 samples, 0.13%)</title><rect x="1087.8" y="261" width="1.6" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="1090.84" y="271.5" ></text>
+</g>
+<g >
+<title>runtime.(*pageAlloc).scavenge.func1 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="341" width="61.9" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1015.88" y="351.5" >runtim..</text>
+</g>
+<g >
+<title>runtime.(*gcControllerState).findRunnableGCWorker (3,547,280 samples, 0.10%)</title><rect x="1078.9" y="405" width="1.1" height="15.0" fill="rgb(224,87,20)" rx="2" ry="2" />
+<text  x="1081.89" y="415.5" ></text>
+</g>
+<g >
+<title>runtime.xRegSave (5,065,232 samples, 0.14%)</title><rect x="1074.8" y="421" width="1.6" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="1077.80" y="431.5" ></text>
+</g>
+<g >
+<title>runtime.mstart.abi0 (250,807,579 samples, 6.81%)</title><rect x="1109.7" y="453" width="80.3" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="1112.68" y="463.5" >runtime.m..</text>
+</g>
+<g >
+<title>runtime.gcBgMarkStartWorkers.gowrap1 (19,099,630 samples, 0.52%)</title><rect x="1006.8" y="437" width="6.1" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="1009.76" y="447.5" ></text>
+</g>
+<g >
+<title>smp_call_function_many_cond (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="133" width="61.9" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1015.88" y="143.5" >smp_ca..</text>
+</g>
+<g >
+<title>runtime.(*scavengerState).init.func2 (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="389" width="61.9" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="1015.88" y="399.5" >runtim..</text>
+</g>
+<g >
+<title>do_epoll_wait (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="277" width="6.5" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1090.84" y="287.5" ></text>
+</g>
+<g >
+<title>_nv031391rm (370,571,255 samples, 10.06%)</title><rect x="470.7" y="117" width="118.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="473.68" y="127.5" >_nv031391rm</text>
+</g>
+<g >
+<title>exit_to_user_mode_loop (2,437,385 samples, 0.07%)</title><rect x="1187.5" y="325" width="0.8" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="1190.52" y="335.5" ></text>
+</g>
+<g >
+<title>runtime.mcall (108,903,882 samples, 2.96%)</title><rect x="1074.8" y="453" width="34.9" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="1077.80" y="463.5" >ru..</text>
+</g>
+<g >
+<title>[libc.so.6] (436,499,808 samples, 11.85%)</title><rect x="10.0" y="437" width="139.8" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="13.00" y="447.5" >[libc.so.6]</text>
+</g>
+<g >
+<title>nvmlDeviceGetUtilizationRates (971,955,342 samples, 26.38%)</title><rect x="692.5" y="245" width="311.2" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="695.47" y="255.5" >nvmlDeviceGetUtilizationRates</text>
+</g>
+<g >
+<title>runtime.markroot (8,672,817 samples, 0.24%)</title><rect x="1010.1" y="357" width="2.8" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="1013.10" y="367.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (7,741,235 samples, 0.21%)</title><rect x="1187.5" y="373" width="2.5" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1190.52" y="383.5" ></text>
+</g>
+<g >
+<title>exit_to_user_mode_loop (7,815,739 samples, 0.21%)</title><rect x="1100.2" y="293" width="2.5" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="1103.20" y="303.5" ></text>
+</g>
+<g >
+<title>ioctl (971,955,342 samples, 26.38%)</title><rect x="692.5" y="149" width="311.2" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="695.47" y="159.5" >ioctl</text>
+</g>
+<g >
+<title>runtime.stealWork (4,603,110 samples, 0.12%)</title><rect x="1095.3" y="389" width="1.5" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1098.29" y="399.5" ></text>
+</g>
+<g >
+<title>runtime.mstart1 (250,807,579 samples, 6.81%)</title><rect x="1109.7" y="421" width="80.3" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="1112.68" y="431.5" >runtime.m..</text>
+</g>
+<g >
+<title>runtime.gcDrain (15,373,163 samples, 0.42%)</title><rect x="1008.0" y="373" width="4.9" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1010.95" y="383.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="197" width="1.3" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1008.49" y="207.5" ></text>
+</g>
+<g >
+<title>rseq_ip_fixup (2,437,385 samples, 0.07%)</title><rect x="1187.5" y="293" width="0.8" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1190.52" y="303.5" ></text>
+</g>
+<g >
+<title>handle_signal (5,041,526 samples, 0.14%)</title><rect x="1074.8" y="293" width="1.6" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1077.81" y="303.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (193,351,676 samples, 5.25%)</title><rect x="1012.9" y="261" width="61.9" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1015.88" y="271.5" >x64_sy..</text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDeviceGetPowerUsage (998,161,314 samples, 27.09%)</title><rect x="151.0" y="325" width="319.7" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="154.01" y="335.5" >github.com/NVIDIA/go-nvml/pkg/nvml.nvmlDevi..</text>
+</g>
+<g >
+<title>kernel_waitid (3,957,105 samples, 0.11%)</title><rect x="1005.5" y="149" width="1.3" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1008.49" y="159.5" ></text>
+</g>
+<g >
+<title>switch_fpu_return (2,494,965 samples, 0.07%)</title><rect x="1099.4" y="277" width="0.8" height="15.0" fill="rgb(206,5,1)" rx="2" ry="2" />
+<text  x="1102.40" y="287.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (32,182,104 samples, 0.87%)</title><rect x="1098.6" y="341" width="10.3" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1101.55" y="351.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (20,113,349 samples, 0.55%)</title><rect x="1087.8" y="341" width="6.5" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1090.84" y="351.5" ></text>
+</g>
+<g >
+<title>runtime.notetsleep_internal (5,073,246 samples, 0.14%)</title><rect x="1185.9" y="373" width="1.6" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="1188.90" y="383.5" ></text>
+</g>
+<g >
+<title>github.com/NVIDIA/go-nvml/pkg/nvml.(*nvmlDevice).GetPowerUsage (998,161,314 samples, 27.09%)</title><rect x="151.0" y="341" width="319.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="154.01" y="351.5" >github.com/NVIDIA/go-nvml/pkg/nvml.(*nvmlDe..</text>
+</g>
+<g >
+<title>runtime.asmcgocall.abi0 (971,955,342 samples, 26.38%)</title><rect x="692.5" y="277" width="311.2" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="695.47" y="287.5" >runtime.asmcgocall.abi0</text>
+</g>
+<g >
+<title>runtime.(*gcControllerState).findRunnableGCWorker (4,640,361 samples, 0.13%)</title><rect x="1081.6" y="389" width="1.5" height="15.0" fill="rgb(224,87,20)" rx="2" ry="2" />
+<text  x="1084.59" y="399.5" ></text>
+</g>
+<g >
+<title>schedule_hrtimeout_range_clock (15,328,027 samples, 0.42%)</title><rect x="1089.4" y="229" width="4.9" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1092.37" y="239.5" ></text>
+</g>
+<g >
+<title>runtime.(*gcWork).empty (4,640,361 samples, 0.13%)</title><rect x="1081.6" y="357" width="1.5" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1084.59" y="367.5" ></text>
+</g>
+<g >
+<title>runtime.findRunnable (87,710,258 samples, 2.38%)</title><rect x="1081.6" y="405" width="28.1" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="1084.59" y="415.5" >r..</text>
+</g>
+<g >
+<title>merge_sched_in (2,172,555 samples, 0.06%)</title><rect x="1076.4" y="101" width="0.7" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="1079.42" y="111.5" ></text>
+</g>
+<g >
+<title>runtime.asmcgocall.abi0 (998,161,314 samples, 27.09%)</title><rect x="151.0" y="277" width="319.7" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="154.01" y="287.5" >runtime.asmcgocall.abi0</text>
+</g>
+<g >
+<title>x64_sys_call (2,188,245 samples, 0.06%)</title><rect x="1076.4" y="325" width="0.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1079.42" y="335.5" ></text>
+</g>
+<g >
+<title>release_task (3,933,274 samples, 0.11%)</title><rect x="1005.5" y="85" width="1.3" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1008.50" y="95.5" ></text>
+</g>
+<g >
+<title>runtime.(*gcControllerState).assignWaitingGCWorker (4,640,361 samples, 0.13%)</title><rect x="1081.6" y="373" width="1.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1084.59" y="383.5" ></text>
+</g>
+<g >
+<title>[libnvidia-ml.so.580.178.04] (998,161,314 samples, 27.09%)</title><rect x="151.0" y="213" width="319.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="154.01" y="223.5" >[libnvidia-ml.so.580.178.04]</text>
+</g>
+</g>
+</svg>

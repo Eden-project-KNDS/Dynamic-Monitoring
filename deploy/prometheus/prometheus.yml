@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: "eden"
+    static_configs:
+      - targets: ["host.docker.internal:9840"]
+        labels:
+          node: "gpunode3"
+
+  # exposes metrics about Prometheus
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
