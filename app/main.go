@@ -6,10 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
+
 	"slurm-monitor/exporter"
 	monitor "slurm-monitor/monitor"
 	"slurm-monitor/synchronization"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -17,11 +18,9 @@ import (
 
 func usage(program string) {
 	fmt.Printf("Program %s takes 2 arg, node name and port\n  How to run: ./%s node_name port", program, program)
-
 }
 
 func main() {
-
 	if len(os.Args) != 3 {
 		usage(os.Args[0])
 		return

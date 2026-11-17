@@ -93,19 +93,23 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 
 func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
 	for _, g := range c.gpus.GPUs() {
-		ch <- prometheus.MustNewConstMetric(
-			gpuUtilizationDesc,
-			prometheus.GaugeValue,
-			float64(g.UtilPercent)/100,
-			strconv.Itoa(g.Index), g.UUID, g.JobID,
-		)
+		if g.UtilPercentValid {
+			ch <- prometheus.MustNewConstMetric(
+				gpuUtilizationDesc,
+				prometheus.GaugeValue,
+				float64(g.UtilPercent)/100,
+				strconv.Itoa(g.Index), g.UUID, g.JobID,
+			)
+		}
 
-		ch <- prometheus.MustNewConstMetric(
-			gpuMemoryUsedDesc,
-			prometheus.GaugeValue,
-			float64(g.MemoryUsed),
-			strconv.Itoa(g.Index), g.UUID, g.JobID,
-		)
+		if g.MemoryUsedValid {
+			ch <- prometheus.MustNewConstMetric(
+				gpuMemoryUsedDesc,
+				prometheus.GaugeValue,
+				float64(g.MemoryUsed),
+				strconv.Itoa(g.Index), g.UUID, g.JobID,
+			)
+		}
 	}
 }
 
@@ -118,12 +122,14 @@ func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
 			j.JobID, j.User, j.Account, j.Partition, j.Name,
 		)
 
-		ch <- prometheus.MustNewConstMetric(
-			jobCPUUsageDesc,
-			prometheus.CounterValue,
-			float64(j.CPUUsageUsec)/1e6, // microseconds -> seconds
-			j.JobID,
-		)
+		if j.CPUUsageValid {
+			ch <- prometheus.MustNewConstMetric(
+				jobCPUUsageDesc,
+				prometheus.CounterValue,
+				float64(j.CPUUsageUsec)/1e6, // microseconds -> seconds
+				j.JobID,
+			)
+		}
 
 		ch <- prometheus.MustNewConstMetric(
 			jobCPUsAllocatedDesc,
@@ -132,15 +138,17 @@ func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
 			j.JobID,
 		)
 
-		ch <- prometheus.MustNewConstMetric(
-			jobMemoryUsedDesc,
-			prometheus.GaugeValue,
-			float64(j.MemoryCurrent),
-			j.JobID,
-		)
+		if j.MemoryCurrentValid {
+			ch <- prometheus.MustNewConstMetric(
+				jobMemoryUsedDesc,
+				prometheus.GaugeValue,
+				float64(j.MemoryCurrent),
+				j.JobID,
+			)
+		}
 
-		// 0 means the kernel has no memory.peak (< 5.19); Grafana can use max_over_time(memory_used) instead.
-		if j.MemoryPeak > 0 {
+		// If memory.peak is unavailable, Grafana can use max_over_time(memory_used) instead.
+		if j.MemoryPeakValid {
 			ch <- prometheus.MustNewConstMetric(
 				jobMemoryPeakDesc,
 				prometheus.GaugeValue,
@@ -150,7 +158,7 @@ func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
 		}
 
 		// No limit means nothing was reserved, so there is nothing to report.
-		if j.MemoryLimit > 0 {
+		if j.MemoryLimitValid && j.MemoryLimit > 0 {
 			ch <- prometheus.MustNewConstMetric(
 				jobMemoryAllocatedDesc,
 				prometheus.GaugeValue,

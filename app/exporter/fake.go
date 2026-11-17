@@ -14,10 +14,10 @@ var fakeStart = time.Now()
 
 func (FakeSource) GPUs() []monitor.GPUStat {
 	return []monitor.GPUStat{
-		{Index: 0, UUID: "GPU-fake-0", UtilPercent: 95, JobID: "1001", MemoryUsed: 30 << 30},
-		{Index: 1, UUID: "GPU-fake-1", UtilPercent: 0, JobID: "1001", MemoryUsed: 0}, // allocated but idle
-		{Index: 2, UUID: "GPU-fake-2", UtilPercent: 40, JobID: "1002", MemoryUsed: 10 << 30},
-		{Index: 3, UUID: "GPU-fake-3", UtilPercent: 0, JobID: "", MemoryUsed: 0}, // free
+		{Index: 0, UUID: "GPU-fake-0", UtilPercent: 95, JobID: "1001", MemoryUsed: 30 << 30, UtilPercentValid: true, MemoryUsedValid: true},
+		{Index: 1, UUID: "GPU-fake-1", UtilPercent: 0, JobID: "1001", MemoryUsed: 0, UtilPercentValid: true, MemoryUsedValid: true}, // allocated but idle
+		{Index: 2, UUID: "GPU-fake-2", UtilPercent: 40, JobID: "1002", MemoryUsed: 10 << 30, UtilPercentValid: true, MemoryUsedValid: true},
+		{Index: 3, UUID: "GPU-fake-3", UtilPercent: 0, JobID: "", MemoryUsed: 0, UtilPercentValid: true, MemoryUsedValid: true}, // free
 	}
 }
 
@@ -32,6 +32,11 @@ func (FakeSource) Jobs() []monitor.JobStat {
 			MemoryCurrent: 20 << 30,
 			MemoryPeak:    24 << 30,
 			MemoryLimit:   64 << 30,
+
+			CPUUsageValid:      true,
+			MemoryCurrentValid: true,
+			MemoryPeakValid:    true,
+			MemoryLimitValid:   true,
 		},
 		{
 			JobID: "1002", User: "bob", Account: "lab-b", Partition: "gpu", Name: "notebook",
@@ -40,6 +45,11 @@ func (FakeSource) Jobs() []monitor.JobStat {
 			MemoryCurrent: 2 << 30,
 			MemoryPeak:    3 << 30,
 			MemoryLimit:   0, // no limit
+
+			CPUUsageValid:      true,
+			MemoryCurrentValid: true,
+			MemoryPeakValid:    true,
+			MemoryLimitValid:   true,
 		},
 	}
 }

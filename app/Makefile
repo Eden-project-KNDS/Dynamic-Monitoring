@@ -47,7 +47,7 @@ daemon_status:
 
 # setting up linux daemon
 set_daemon: build
-	p $(BIN) /usr/local/bin/
+	cp $(BIN) /usr/local/bin/
 	chown root:root /usr/local/bin/$(BIN)
 	chmod 755 /usr/local/bin/$(BIN)
 	mkdir -p /etc/$(BIN)

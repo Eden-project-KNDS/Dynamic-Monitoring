@@ -15,7 +15,6 @@ import (
 // fix change to ENV
 
 func getGPUCount() int {
-
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
 		log.Printf("Unable to get device count: %v", nvml.ErrorString(ret))
@@ -23,7 +22,6 @@ func getGPUCount() int {
 	}
 
 	return count
-
 }
 
 type gpuMetrics struct {
@@ -68,18 +66,17 @@ func NewGPUMonitor() *gpuMonitor {
 	return &newGPUMonitor
 }
 
-func parseProcCgroups(pid uint32) string {
+func tryParseProcCgroups(pid uint32) (string, error) {
 	file, err := os.Open("/proc/" + strconv.FormatUint(uint64(pid), 10) + "/cgroup")
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("Couldn't open cgroup for PID %d: %w", pid, err)
 	}
 	defer file.Close()
 
-	return parseCgroupReader(file)
+	return tryParseCgroupReader(file)
 }
 
-func parseCgroupReader(r io.Reader) string {
-
+func tryParseCgroupReader(r io.Reader) (string, error) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -87,19 +84,38 @@ func parseCgroupReader(r io.Reader) string {
 
 		for _, val := range splitLine {
 			if strings.HasPrefix(val, PATTERN) {
-				return strings.TrimPrefix(val, PATTERN) // job_{number} -> {number}
+				jobId := strings.TrimPrefix(val, PATTERN) // job_{number} -> {number}
+				id, err := strconv.ParseUint(jobId, 10, 64)
+				if err != nil {
+					return "", fmt.Errorf("Invalid job ID %q: %w", jobId, err)
+				}
+				if id == 0 {
+					return "", fmt.Errorf("Job ID must be positive: %q", jobId)
+				}
+				return jobId, nil
 			}
 		}
 	}
-	return ""
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("Scanning finished with error %w", err)
+	}
+	return "", nil
 }
 
-// flag 0 print on terminal flag 1 send to prometheus
-func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
-
-	var gpuStats []GPUStat = make([]GPUStat, m.gpuCount)
+func (m *gpuMonitor) getGpuStats() []GPUStat {
+	var gpuStats []GPUStat = make([]GPUStat, 0, m.gpuCount)
 
 	for i := 0; i < m.gpuCount; i++ {
+		m.metrics[i] = gpuMetrics{}
+		uuid, retUUID := m.devices[i].GetUUID()
+		if retUUID != nvml.SUCCESS {
+			log.Printf("Couldn't read UUID for device index %d: %v", i, nvml.ErrorString(retUUID))
+			continue
+		}
+		if uuid == "" {
+			log.Printf("Empty UUID for device index %d", i)
+			continue
+		}
 		jobIdString := ""
 		util, retUtil := m.devices[i].GetUtilizationRates()
 		// _v2 reports driver-reserved memory separately; v1 counts it as used (~450 MiB on an idle card).
@@ -107,60 +123,59 @@ func (m *gpuMonitor) getGpuStats(flag int) *[]GPUStat {
 		temp, retTemp := m.devices[i].GetTemperature(nvml.TEMPERATURE_GPU)
 		power, retPower := m.devices[i].GetPowerUsage() // Returns milliwatts
 		proc, retPids := m.devices[i].GetComputeRunningProcesses()
-
-		if retUtil == nvml.SUCCESS {
+		if retUtil != nvml.SUCCESS {
+			log.Printf("Couldn't read utilization for device index %d: %v", i, nvml.ErrorString(retUtil))
+		} else {
 			m.metrics[i].coreUtilPercent = uint32(util.Gpu)
 			m.metrics[i].memoryUtilPercent = uint32(util.Memory)
 		}
-
-		if retMem == nvml.SUCCESS {
+		if retMem != nvml.SUCCESS {
+			log.Printf("Couldn't read memory info for device index %d: %v", i, nvml.ErrorString(retMem))
+		} else {
 			m.metrics[i].memoryUsedMB = mem.Used / (1024 * 1024)
 			m.metrics[i].memoryTotalMB = mem.Total / (1024 * 1024)
 		}
-
-		if retTemp == nvml.SUCCESS {
+		if retTemp != nvml.SUCCESS {
+			log.Printf("Couldn't read temperature for device index %d: %v", i, nvml.ErrorString(retTemp))
+		} else {
 			m.metrics[i].tempCelsius = uint32(temp)
 		}
-
-		if retPower == nvml.SUCCESS {
+		if retPower != nvml.SUCCESS {
+			log.Printf("Couldn't read power usage for device index %d: %v", i, nvml.ErrorString(retPower))
+		} else {
 			m.metrics[i].powerWatts = float64(power) / 1000.0
 		}
-		if retPids == nvml.SUCCESS {
-			for _, pid := range proc {
-				jobIdString = parseProcCgroups(pid.Pid)
-				fmt.Println(jobIdString)
-				if jobIdString != "" {
-					break
-				}
+		if retPids != nvml.SUCCESS {
+			log.Printf("Couldn't read PIDs for device index %d: %v", i, nvml.ErrorString(retPids))
+			proc = nil
+		}
+
+		for _, pid := range proc {
+			jobIdString, err := tryParseProcCgroups(pid.Pid)
+			if err != nil {
+				log.Printf("Couldn't read job for device index %d, PID %d: %v", i, pid.Pid, err)
+				continue
+			}
+			if jobIdString != "" {
+				break
 			}
 		}
 
-		if flag == 0 {
-			fmt.Printf("  Core Usage:   %d%%\n", m.metrics[i].coreUtilPercent)
-			fmt.Printf("  VRAM Usage:   %d MB / %d MB (Mem Controller: %d%%)\n", m.metrics[i].memoryUsedMB, m.metrics[i].memoryTotalMB, m.metrics[i].memoryUtilPercent)
-			fmt.Printf("  Temperature:  %d°C\n", m.metrics[i].tempCelsius)
-			fmt.Printf("  Power Usage:  %.2f W\n\n", m.metrics[i].powerWatts)
-		} else if flag == 1 {
-			gpuStats[i].Index = i
-			if uuid, ret := m.devices[i].GetUUID(); ret == nvml.SUCCESS {
-				gpuStats[i].UUID = uuid
-			}
-			gpuStats[i].UtilPercent = m.metrics[i].coreUtilPercent
-			gpuStats[i].JobID = jobIdString
-			gpuStats[i].MemoryUsed = m.metrics[i].memoryUsedMB * 1024 * 1024 // For proper display in Grafana
-
-		}
+		gpuStats = append(gpuStats, GPUStat{
+			Index:            i,
+			UUID:             uuid,
+			UtilPercent:      m.metrics[i].coreUtilPercent,
+			UtilPercentValid: retUtil == nvml.SUCCESS,
+			JobID:            jobIdString,
+			MemoryUsed:       m.metrics[i].memoryUsedMB * 1024 * 1024, // For proper display in Grafana
+			MemoryUsedValid:  retMem == nvml.SUCCESS,
+		})
 	}
-	if flag == 0 {
-		return nil
-	} else if flag == 1 {
-		return &gpuStats
-	}
-	return nil
+	return gpuStats
 }
 
 func (m *gpuMonitor) GPUs() []GPUStat {
-	return *(m.getGpuStats(1))
+	return m.getGpuStats()
 }
 
 // Close releases NVML. Call it once, when the program shuts down.

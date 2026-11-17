@@ -28,6 +28,11 @@ func TestJobMetrics(t *testing.T) {
 				MemoryCurrent: 1024,
 				MemoryPeak:    2048,
 				MemoryLimit:   0, // no limit -> no eden_job_memory_allocated_bytes
+
+				CPUUsageValid:      true,
+				MemoryCurrentValid: true,
+				MemoryPeakValid:    true,
+				MemoryLimitValid:   true,
 			},
 		},
 	}
@@ -59,6 +64,31 @@ eden_job_memory_peak_bytes{job_id="42"} 2048
 		"eden_job_memory_used_bytes",
 		"eden_job_memory_peak_bytes",
 		"eden_job_memory_allocated_bytes",
+	)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestMetricValidity(t *testing.T) {
+	src := testSource{
+		gpus: []monitor.GPUStat{{Index: 0, UUID: "GPU-test", UtilPercent: 90, MemoryUsedValid: true}},
+		jobs: []monitor.JobStat{{JobID: "42", CPUUsageUsec: 1000000, MemoryCurrentValid: true, MemoryPeak: 2048, MemoryLimit: 4096}},
+	}
+
+	expected := `
+# HELP eden_gpu_memory_used_bytes GPU memory used, with the job the card is allocated to.
+# TYPE eden_gpu_memory_used_bytes gauge
+eden_gpu_memory_used_bytes{gpu="0",job_id="",uuid="GPU-test"} 0
+# HELP eden_job_memory_used_bytes Memory currently used by the job.
+# TYPE eden_job_memory_used_bytes gauge
+eden_job_memory_used_bytes{job_id="42"} 0
+`
+	err := testutil.CollectAndCompare(
+		NewCollector(src, src), strings.NewReader(expected),
+		"eden_gpu_utilization_ratio", "eden_gpu_memory_used_bytes",
+		"eden_job_cpu_usage_seconds_total", "eden_job_memory_used_bytes",
+		"eden_job_memory_peak_bytes", "eden_job_memory_allocated_bytes",
 	)
 	if err != nil {
 		t.Error(err)
