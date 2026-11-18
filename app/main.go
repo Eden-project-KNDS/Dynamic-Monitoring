@@ -6,10 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
+
 	"slurm-monitor/exporter"
 	monitor "slurm-monitor/monitor"
 	"slurm-monitor/synchronization"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -17,7 +18,6 @@ import (
 
 func usage(program string) {
 	fmt.Printf("Program %s takes 1 arg, port\n  How to run: ./%s port", program, program)
-
 }
 
 func main() {
