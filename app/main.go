@@ -27,7 +27,7 @@ func main() {
 		return
 	}
 
-	listenAddress := ":" + os.Args[2]
+	listenAddress := ":" + os.Args[1]
 
 	// s is shared by all goroutines, so they stop together on SIGINT or SIGTERM.
 	s, stop := synchronization.CreateSignalHandling()
