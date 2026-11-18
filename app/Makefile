@@ -4,6 +4,7 @@ BIN=slurm-monitor
 LISTEN_ADDRESS=9840
 SERVICE_FILE=config/slurm-monitor.service
 CONFIG_FILE=config/config.env 
+GO ?= /usr/local/go/bin/go
 
 # Domyślny cel (wywoływany przez wpisanie samo 'make')
 default: fmt lint
@@ -26,7 +27,7 @@ benchmark:
 
 # Kompiluje demona monitorującego zasoby Slurma (z wyciszeniem ostrzeżeń CGO)
 build:
-	CGO_CFLAGS="-Wno-deprecated-declarations" go build -o $(BIN) .
+	CGO_CFLAGS="-Wno-deprecated-declarations" $(GO) build -o $(BIN)  .
 
 daemon_status:
 	systemctl status $(BIN)
