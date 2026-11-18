@@ -19,7 +19,6 @@ const (
 
 type jobData struct {
 	user      string
-	node      string
 	account   string
 	partition string
 	name      string
@@ -79,7 +78,7 @@ func (jobs *allJobs) getNewJobs() {
 				continue
 			}
 
-			meta := jobData{node: jobs.nodeName}
+			meta := jobData{}
 			output := out.String()
 			rawUser, err := tryParseScontrolValue(output, "UserId")
 			if err != nil {
@@ -244,9 +243,8 @@ func (jobs *allJobs) Jobs() []JobStat {
 }
 
 // key is job_id number to search for a dir need to add PATTERN
-func NewAllJobs(nodeName string) *allJobs {
+func NewAllJobs() *allJobs {
 	return &allJobs{
-		nodeName:   nodeName,
 		JobCache:   make(map[string]jobData),
 		JobMetrics: make(map[string]cpuMetrics),
 	}

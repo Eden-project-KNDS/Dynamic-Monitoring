@@ -5,11 +5,11 @@ After=network.target slurmd.service
 [Service]
 Type=simple
 
-# Wczytanie pliku ze zmiennymi (NODE_NAME i LISTEN_ADDRESS)
+# Wczytanie pliku ze zmiennymi (LISTEN_ADDRESS)
 EnvironmentFile=/etc/slurm-monitor/config.env
 
 # Przekazanie zmiennych jako argumenty pozycyjne (kolejność ma kluczowe znaczenie!)
-ExecStart=/usr/local/bin/slurm-monitor ${NODE_NAME} ${LISTEN_ADDRESS}
+ExecStart=/usr/local/bin/slurm-monitor ${LISTEN_ADDRESS}
 
 User=root
 Group=root
