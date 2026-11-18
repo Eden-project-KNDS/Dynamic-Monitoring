@@ -24,8 +24,6 @@ test:
 benchmark:
 	go test -bench=. -benchmem ./monitor
 
-run: build
-	./$(BIN) gpunode3 $(LISTEN_ADDRESS)
 # Kompiluje demona monitorującego zasoby Slurma (z wyciszeniem ostrzeżeń CGO)
 build:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go build -o $(BIN) .
@@ -47,7 +45,7 @@ daemon_status:
 
 # setting up linux daemon
 set_daemon: build
-	p $(BIN) /usr/local/bin/
+	cp $(BIN) /usr/local/bin/
 	chown root:root /usr/local/bin/$(BIN)
 	chmod 755 /usr/local/bin/$(BIN)
 	mkdir -p /etc/$(BIN)
