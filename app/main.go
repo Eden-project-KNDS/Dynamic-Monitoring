@@ -16,18 +16,17 @@ import (
 )
 
 func usage(program string) {
-	fmt.Printf("Program %s takes 2 arg, node name and port\n  How to run: ./%s node_name port", program, program)
+	fmt.Printf("Program %s takes 1 arg, port\n  How to run: ./%s port", program, program)
 
 }
 
 func main() {
 
-	if len(os.Args) != 3 {
+	if len(os.Args) != 2 {
 		usage(os.Args[0])
 		return
 	}
 
-	node := os.Args[1]
 	listenAddress := ":" + os.Args[2]
 
 	// s is shared by all goroutines, so they stop together on SIGINT or SIGTERM.
@@ -36,7 +35,7 @@ func main() {
 
 	fmt.Printf("Start\n")
 	gpus := monitor.NewGPUMonitor()
-	jobs := monitor.NewAllJobs(node)
+	jobs := monitor.NewAllJobs()
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(exporter.NewCollector(gpus, jobs))
