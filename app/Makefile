@@ -1,4 +1,4 @@
-.PHONY: default fmt lint test run build test-job test-metrics clean
+.PHONY: default fmt lint test build clean
 
 BIN=slurm-monitor
 LISTEN_ADDRESS=9840
