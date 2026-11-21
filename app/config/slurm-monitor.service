@@ -1,5 +1,6 @@
 [Unit]
 Description=Slurm GPU & CPU Resource Monitor
+Documentation=https://github.com/Eden-project-KNDS/Dynamic-Monitoring
 After=network.target slurmd.service
 
 [Service]
@@ -11,8 +12,7 @@ EnvironmentFile=/etc/slurm-monitor/config.env
 # Przekazanie zmiennych jako argumenty pozycyjne (kolejność ma kluczowe znaczenie!)
 ExecStart=/usr/local/bin/slurm-monitor ${LISTEN_ADDRESS}
 
-User=root
-Group=root
+DynamicUser=yes
 
 Restart=always
 RestartSec=5
