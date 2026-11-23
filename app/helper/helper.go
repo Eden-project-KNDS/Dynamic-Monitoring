@@ -54,6 +54,7 @@ func FindScontrol() (string, error) {
 		"/opt/slurm/bin/scontrol",
 		"/usr/local/bin/scontrol",
 		"/usr/bin/scontrol",
+		"/mnt/evafs/software/slurm/amd_epyc/current/bin/scontrol",
 	}
 
 	for _, fPath := range fallbackPaths {
