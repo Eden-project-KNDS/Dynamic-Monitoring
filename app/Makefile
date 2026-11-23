@@ -34,7 +34,7 @@ daemon_status:
 
 
 # setting up linux daemon
-set_daemon: build
+init_daemon: build
 	cp $(BIN) /usr/local/bin/
 	chown root:root /usr/local/bin/$(BIN)
 	chmod 755 /usr/local/bin/$(BIN)
@@ -44,6 +44,11 @@ set_daemon: build
 	systemctl daemon-reload
 	systemctl enable $(BIN)
 	systemctl start $(BIN)
+	$(MAKE) daemon_status
+
+update_daemon: build
+	install -m 755 slurm-monitor /usr/local/bin/slurm-monitor
+	systemctl restart slurm-monitor
 	$(MAKE) daemon_status
 
 clean:

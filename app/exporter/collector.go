@@ -1,9 +1,9 @@
 package exporter
 
 import (
-	"strconv"
-
+	helper "slurm-monitor/helper"
 	monitor "slurm-monitor/monitor"
+	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -92,6 +92,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
+	helper.GeneralLogger.Println("Pulling data from GPU")
 	for _, g := range c.gpus.GPUs() {
 		if g.UtilPercentValid {
 			ch <- prometheus.MustNewConstMetric(
@@ -114,6 +115,7 @@ func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
+	helper.GeneralLogger.Println("Pulling data from GPU")
 	for _, j := range c.jobs.Jobs() {
 		ch <- prometheus.MustNewConstMetric(
 			jobInfoDesc,

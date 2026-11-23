@@ -3,13 +3,16 @@ package monitor
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
+	helper "slurm-monitor/helper"
 	"strconv"
 	"strings"
 )
+
+// global scontrol path
+var ScontrolPath string
 
 // tu znajdują się pliki
 const (
@@ -59,14 +62,14 @@ func getJobId(folderName string) string {
 func (jobs *allJobs) getNewJobs() {
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
-		log.Printf("Couldn't read cgroups at %s: %v", PATH, err)
+		helper.ErrorLogger.Printf("Couldn't read cgroups at %s: %v", PATH, err)
 		return
 	}
 
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), PATTERN) && !keyExists(jobs.JobCache, getJobId(entry.Name())) {
 			jobId := getJobId(entry.Name())
-			cmd := exec.Command("/usr/local/slurm/latest/bin/scontrol", "show", "job", jobId)
+			cmd := exec.Command(ScontrolPath, "show", "job", jobId)
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			var stderr bytes.Buffer
@@ -74,7 +77,7 @@ func (jobs *allJobs) getNewJobs() {
 
 			err := cmd.Run()
 			if err != nil {
-				log.Printf("Couldn't get scontrol data for job %s: %v; stderr: %s", jobId, err, strings.TrimSpace(stderr.String()))
+				helper.ErrorLogger.Printf("Couldn't get scontrol data for job %s: %v; stderr: %s", jobId, err, strings.TrimSpace(stderr.String()))
 				continue
 			}
 
@@ -82,7 +85,7 @@ func (jobs *allJobs) getNewJobs() {
 			output := out.String()
 			rawUser, err := tryParseScontrolValue(output, "UserId")
 			if err != nil {
-				log.Printf("Couldn't parse scontrol UserId for job %s: %v", jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol UserId for job %s: %v", jobId, err)
 				continue
 			}
 
@@ -93,34 +96,34 @@ func (jobs *allJobs) getNewJobs() {
 			}
 			meta.account, err = tryParseScontrolValue(output, "Account")
 			if err != nil {
-				log.Printf("Couldn't parse scontrol Account for job %s: %v", jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol Account for job %s: %v", jobId, err)
 				continue
 			}
 			meta.partition, err = tryParseScontrolValue(output, "Partition")
 			if err != nil {
-				log.Printf("Couldn't parse scontrol Partition for job %s: %v", jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol Partition for job %s: %v", jobId, err)
 				continue
 			}
 			meta.name, err = tryParseScontrolValue(output, "JobName")
 			if err != nil {
-				log.Printf("Couldn't parse scontrol JobName for job %s: %v", jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol JobName for job %s: %v", jobId, err)
 				continue
 			}
 			cpus, err := tryParseScontrolValue(output, "NumCPUs")
 			if err != nil {
-				log.Printf("Couldn't parse scontrol NumCPUs for job %s: %v", jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol NumCPUs for job %s: %v", jobId, err)
 				continue
 			}
 			meta.cpus, err = strconv.Atoi(cpus)
 			if err != nil {
-				log.Printf("Couldn't parse scontrol NumCPUs %q for job %s: %v", cpus, jobId, err)
+				helper.ErrorLogger.Printf("Couldn't parse scontrol NumCPUs %q for job %s: %v", cpus, jobId, err)
 				continue
 			}
 
 			jobs.JobCache[jobId] = meta
 			jobs.JobMetrics[jobId] = cpuMetrics{}
 
-			fmt.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
+			helper.GeneralLogger.Printf("Found new job: %s USER: %s ACCOUNT: %s PARTITION: %s NAME: %s CPUS: %d\n",
 				jobId, meta.user, meta.account, meta.partition, meta.name, meta.cpus)
 		}
 	}
@@ -130,7 +133,7 @@ func (jobs *allJobs) clearOldJobs() {
 	for jobId := range jobs.JobCache {
 		_, err := os.Stat(PATH + PATTERN + jobId)
 		if err != nil { // file doesn't exist -> clearing maps
-			fmt.Printf("Job %s is not longer valid\n", jobId)
+			helper.GeneralLogger.Printf("Job %s is not longer valid\n", jobId)
 			delete(jobs.JobMetrics, jobId)
 			delete(jobs.JobCache, jobId)
 		}
@@ -185,25 +188,25 @@ func readJobStat(jobId string, meta jobData, dir string) JobStat {
 	dirMemoryCurrent := dir + "memory.current"
 	memoryCurrent, memoryCurrentErr := tryReadCGroupsAsUint(dirMemoryCurrent)
 	if memoryCurrentErr != nil {
-		log.Printf("Couldn't read memory.current for job %s: %v", jobId, memoryCurrentErr)
+		helper.ErrorLogger.Printf("Couldn't read memory.current for job %s: %v", jobId, memoryCurrentErr)
 	}
 
 	dirMemoryPeak := dir + "memory.peak"
 	memoryPeak, memoryPeakErr := tryReadCGroupsAsUint(dirMemoryPeak)
 	if memoryPeakErr != nil {
-		log.Printf("Couldn't read memory.peak for job %s: %v", jobId, memoryPeakErr)
+		helper.ErrorLogger.Printf("Couldn't read memory.peak for job %s: %v", jobId, memoryPeakErr)
 	}
 
 	dirMemoryMax := dir + "memory.max"
 	memoryMax, memoryMaxErr := tryReadCGroupsAsUint(dirMemoryMax)
 	if memoryMaxErr != nil {
-		log.Printf("Couldn't read memory.max for job %s: %v", jobId, memoryMaxErr)
+		helper.ErrorLogger.Printf("Couldn't read memory.max for job %s: %v", jobId, memoryMaxErr)
 	}
 
 	dirCPUStat := dir + "cpu.stat"
 	cpuUsage, cpuUsageErr := tryReadStatValue(dirCPUStat, "usage_usec")
 	if cpuUsageErr != nil {
-		log.Printf("Couldn't read cpu.stat usage_usec for job %s: %v", jobId, cpuUsageErr)
+		helper.ErrorLogger.Printf("Couldn't read cpu.stat usage_usec for job %s: %v", jobId, cpuUsageErr)
 	}
 
 	return JobStat{
@@ -229,7 +232,7 @@ func readJobStat(jobId string, meta jobData, dir string) JobStat {
 func (jobs *allJobs) Jobs() []JobStat {
 	jobs.getNewJobs()
 	jobs.clearOldJobs()
-	fmt.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
+	helper.GeneralLogger.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
 	stats := make([]JobStat, 0, len(jobs.JobCache))
 	for jobId, meta := range jobs.JobCache {

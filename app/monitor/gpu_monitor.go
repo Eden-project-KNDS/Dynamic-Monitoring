@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	helper "slurm-monitor/helper"
 	"strconv"
 	"strings"
 
@@ -44,7 +45,7 @@ func NewGPUMonitor() *gpuMonitor {
 	ret := nvml.Init()
 
 	if ret != nvml.SUCCESS {
-		log.Printf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
+		helper.ErrorLogger.Printf("Unable to initialize NVML: %v", nvml.ErrorString(ret))
 		return &gpuMonitor{}
 	}
 
@@ -59,7 +60,7 @@ func NewGPUMonitor() *gpuMonitor {
 		device, ret := nvml.DeviceGetHandleByIndex(i)
 
 		if ret != nvml.SUCCESS {
-			log.Printf("Unable to get device at index %d: %v", i, nvml.ErrorString(ret))
+			helper.ErrorLogger.Printf("Unable to get device at index %d: %v", i, nvml.ErrorString(ret))
 			return &gpuMonitor{}
 		}
 		newGPUMonitor.devices[i] = device
@@ -110,11 +111,11 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 		m.metrics[i] = gpuMetrics{}
 		uuid, retUUID := m.devices[i].GetUUID()
 		if retUUID != nvml.SUCCESS {
-			log.Printf("Couldn't read UUID for device index %d: %v", i, nvml.ErrorString(retUUID))
+			helper.ErrorLogger.Printf("Couldn't read UUID for device index %d: %v", i, nvml.ErrorString(retUUID))
 			continue
 		}
 		if uuid == "" {
-			log.Printf("Empty UUID for device index %d", i)
+			helper.ErrorLogger.Printf("Empty UUID for device index %d", i)
 			continue
 		}
 		util, retUtil := m.devices[i].GetUtilizationRates()
@@ -124,36 +125,36 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 		power, retPower := m.devices[i].GetPowerUsage() // Returns milliwatts
 		proc, retPids := m.devices[i].GetComputeRunningProcesses()
 		if retUtil != nvml.SUCCESS {
-			log.Printf("Couldn't read utilization for device index %d: %v", i, nvml.ErrorString(retUtil))
+			helper.ErrorLogger.Printf("Couldn't read utilization for device index %d: %v", i, nvml.ErrorString(retUtil))
 		} else {
 			m.metrics[i].coreUtilPercent = uint32(util.Gpu)
 			m.metrics[i].memoryUtilPercent = uint32(util.Memory)
 		}
 		if retMem != nvml.SUCCESS {
-			log.Printf("Couldn't read memory info for device index %d: %v", i, nvml.ErrorString(retMem))
+			helper.ErrorLogger.Printf("Couldn't read memory info for device index %d: %v", i, nvml.ErrorString(retMem))
 		} else {
 			m.metrics[i].memoryUsedMB = mem.Used / (1024 * 1024)
 			m.metrics[i].memoryTotalMB = mem.Total / (1024 * 1024)
 		}
 		if retTemp != nvml.SUCCESS {
-			log.Printf("Couldn't read temperature for device index %d: %v", i, nvml.ErrorString(retTemp))
+			helper.ErrorLogger.Printf("Couldn't read temperature for device index %d: %v", i, nvml.ErrorString(retTemp))
 		} else {
 			m.metrics[i].tempCelsius = uint32(temp)
 		}
 		if retPower != nvml.SUCCESS {
-			log.Printf("Couldn't read power usage for device index %d: %v", i, nvml.ErrorString(retPower))
+			helper.ErrorLogger.Printf("Couldn't read power usage for device index %d: %v", i, nvml.ErrorString(retPower))
 		} else {
 			m.metrics[i].powerWatts = float64(power) / 1000.0
 		}
 		if retPids != nvml.SUCCESS {
-			log.Printf("Couldn't read PIDs for device index %d: %v", i, nvml.ErrorString(retPids))
+			helper.ErrorLogger.Printf("Couldn't read PIDs for device index %d: %v", i, nvml.ErrorString(retPids))
 			proc = nil
 		}
 
 		for _, pid := range proc {
 			jobIdString, err := tryParseProcCgroups(pid.Pid)
 			if err != nil {
-				log.Printf("Couldn't read job for device index %d, PID %d: %v", i, pid.Pid, err)
+				helper.ErrorLogger.Printf("Couldn't read job for device index %d, PID %d: %v", i, pid.Pid, err)
 				continue
 			}
 			if jobIdString != "" {
@@ -171,6 +172,7 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 			MemoryUsed:       m.metrics[i].memoryUsedMB * 1024 * 1024, // For proper display in Grafana
 			MemoryUsedValid:  retMem == nvml.SUCCESS,
 		})
+		helper.GeneralLogger.Printf("Successfully appended data from %d gpu\n", i)
 	}
 	return gpuStats
 }
@@ -185,6 +187,6 @@ func (m *gpuMonitor) Close() {
 		return
 	}
 	if ret := nvml.Shutdown(); ret != nvml.SUCCESS {
-		log.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
+		helper.ErrorLogger.Printf("Unable to shutdown NVML: %v", nvml.ErrorString(ret))
 	}
 }
