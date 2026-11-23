@@ -31,6 +31,7 @@ type gpuMetrics struct {
 	memoryUsedMB      uint64
 	memoryTotalMB     uint64
 	powerWatts        float64
+	jobId             string
 }
 
 type gpuMonitor struct {
@@ -116,7 +117,6 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 			log.Printf("Empty UUID for device index %d", i)
 			continue
 		}
-		jobIdString := ""
 		util, retUtil := m.devices[i].GetUtilizationRates()
 		// _v2 reports driver-reserved memory separately; v1 counts it as used (~450 MiB on an idle card).
 		mem, retMem := m.devices[i].GetMemoryInfo_v2()
@@ -157,6 +157,7 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 				continue
 			}
 			if jobIdString != "" {
+				m.metrics[i].jobId = jobIdString
 				break
 			}
 		}
@@ -166,7 +167,7 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 			UUID:             uuid,
 			UtilPercent:      m.metrics[i].coreUtilPercent,
 			UtilPercentValid: retUtil == nvml.SUCCESS,
-			JobID:            jobIdString,
+			JobID:            m.metrics[i].jobId,
 			MemoryUsed:       m.metrics[i].memoryUsedMB * 1024 * 1024, // For proper display in Grafana
 			MemoryUsedValid:  retMem == nvml.SUCCESS,
 		})
