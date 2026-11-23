@@ -5,6 +5,7 @@ After=network.target slurmd.service
 
 [Service]
 Type=simple
+LogsDirectory=slurm-monitor
 
 # Wczytanie pliku ze zmiennymi (LISTEN_ADDRESS)
 EnvironmentFile=/etc/slurm-monitor/config.env

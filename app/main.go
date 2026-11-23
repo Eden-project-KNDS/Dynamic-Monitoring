@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"slurm-monitor/exporter"
+	helper "slurm-monitor/helper"
 	monitor "slurm-monitor/monitor"
+
 	"slurm-monitor/synchronization"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,20 +21,14 @@ func usage(program string) {
 	fmt.Printf("Program %s takes 1 arg, port\n  How to run: ./%s port", program, program)
 }
 
-func main() {
-
-	if len(os.Args) != 2 {
-		usage(os.Args[0])
-		return
-	}
-
-	listenAddress := ":" + os.Args[1]
+func run(listenAddress string) {
 
 	// s is shared by all goroutines, so they stop together on SIGINT or SIGTERM.
 	s, stop := synchronization.CreateSignalHandling()
 	defer stop()
 
-	fmt.Printf("Start\n")
+	helper.GeneralLogger.Printf("Start\n")
+
 	gpus := monitor.NewGPUMonitor()
 	jobs := monitor.NewAllJobs()
 
@@ -48,19 +43,19 @@ func main() {
 	go func() {
 		defer s.Wg.Done()
 		<-s.Ctx.Done()
-		fmt.Println("\nStopping monitor")
+		helper.GeneralLogger.Println("\nStopping monitor")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("Error shutting down http server: %v", err)
+			helper.ErrorLogger.Printf("Error shutting down http server: %v", err)
 		}
 	}()
 
 	// On a server error (e.g. port in use) stop the program the same way as on a signal.
 	serverErr := srv.ListenAndServe()
 	if serverErr != http.ErrServerClosed {
-		log.Printf("HTTP server error: %v", serverErr)
+		helper.ErrorLogger.Printf("HTTP server error: %v", serverErr)
 		stop()
 	}
 
@@ -71,4 +66,24 @@ func main() {
 	if serverErr != http.ErrServerClosed {
 		os.Exit(1)
 	}
+}
+
+func main() {
+
+	if len(os.Args) != 2 {
+		usage(os.Args[0])
+		return
+	}
+	//init logger to log into log file
+	helper.InitLogger()
+	var err error
+	monitor.ScontrolPath, err = helper.FindScontrol()
+
+	if err != nil {
+		helper.ErrorLogger.Printf("Couldn't find scontrol monitor stops\n")
+		os.Exit(1)
+	}
+
+	listenAddress := ":" + os.Args[1]
+	run(listenAddress)
 }
