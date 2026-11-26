@@ -1,4 +1,4 @@
-package monitor
+package helper
 
 import (
 	"fmt"
@@ -15,26 +15,27 @@ var GeneralLogger = log.New(os.Stderr, "[+]General Logger:\t", log.Ldate|log.Lti
 // ErrorLogger writes to stderr until InitLogger redirects it to a file.
 var ErrorLogger = log.New(os.Stderr, "[X]Error Logger:\t", log.Ldate|log.Ltime|log.Lshortfile)
 
-func InitLogger() {
+// InitLogger redirects both loggers to general-log.log in $LOGS_DIRECTORY
+// If it fails, it returns the error and the loggers keep writing to stderr.
+func InitLogger() error {
 	logDir := os.Getenv("LOGS_DIRECTORY")
 	if logDir == "" {
 		logDir = "./log"
 	}
 
 	// Ensure the directory exists before opening the file
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating log directory %s: %v\n", logDir, err)
-		os.Exit(1)
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return fmt.Errorf("creating log directory %s: %w", logDir, err)
 	}
 
 	logPath := filepath.Join(logDir, "general-log.log")
-	generalLog, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	file, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening log file %s: %v\n", logPath, err)
-		os.Exit(1)
+		return fmt.Errorf("opening log file %s: %w", logPath, err)
 	}
-	GeneralLogger = log.New(generalLog, "[+]General Logger:\t", log.Ldate|log.Ltime|log.Lshortfile)
-	ErrorLogger = log.New(generalLog, "[X]Error Logger:\t", log.Ldate|log.Ltime|log.Lshortfile)
+	GeneralLogger.SetOutput(file)
+	ErrorLogger.SetOutput(file)
+	return nil
 }
 
 func isExec(mode fs.FileMode) bool {

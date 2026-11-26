@@ -74,8 +74,10 @@ func main() {
 		usage(os.Args[0])
 		return
 	}
-	//init logger to log into log file
-	helper.InitLogger()
+	// Log to a file. If that fails, keep logging to stderr
+	if err := helper.InitLogger(); err != nil {
+		helper.ErrorLogger.Printf("Logging to stderr instead of a file: %v", err)
+	}
 	var err error
 	monitor.ScontrolPath, err = helper.FindScontrol()
 
