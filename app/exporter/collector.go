@@ -115,7 +115,7 @@ func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
-	helper.GeneralLogger.Println("Pulling data from GPU")
+	helper.GeneralLogger.Println("Pulling data from jobs")
 	for _, j := range c.jobs.Jobs() {
 		ch <- prometheus.MustNewConstMetric(
 			jobInfoDesc,
