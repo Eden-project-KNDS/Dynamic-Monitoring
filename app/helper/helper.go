@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 )
 
-// GeneralLogger exported
-var GeneralLogger *log.Logger
+// GeneralLogger writes to stderr until InitLogger redirects it to a file
+var GeneralLogger = log.New(os.Stderr, "[+]General Logger:\t", log.Ldate|log.Ltime|log.Lshortfile)
 
-// ErrorLogger exported
-var ErrorLogger *log.Logger
+// ErrorLogger writes to stderr until InitLogger redirects it to a file.
+var ErrorLogger = log.New(os.Stderr, "[X]Error Logger:\t", log.Ldate|log.Ltime|log.Lshortfile)
 
 func InitLogger() {
 	logDir := os.Getenv("LOGS_DIRECTORY")
