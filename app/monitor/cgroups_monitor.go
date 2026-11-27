@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	helper "slurm-monitor/helper"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // global scontrol path
@@ -60,6 +62,9 @@ func getJobId(folderName string) string {
 }
 
 func (jobs *allJobs) getNewJobs() {
+	if ScontrolPath == "" {
+		return //scontrol wasn't found at startup (logged in main)
+	}
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
 		helper.ErrorLogger.Printf("Couldn't read cgroups at %s: %v", PATH, err)
@@ -165,6 +170,27 @@ func tryReadCGroupsAsUint(path string) (uint64, error) {
 	return value, nil
 }
 
+// tryReadMemoryLimit reads memory.max. cgroup v2 writes "max" when the job has no
+// memory limit; that is returned as 0, which the exporter treats as "no limit".
+func tryReadMemoryLimit(path string) (uint64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("couldn't read the file at the path `%s`: %w", path, err)
+	}
+	raw := strings.TrimSpace(string(data))
+	if raw == "max" {
+		return 0, nil
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("couldn't parse the input %q at `%s` as a uint: %w", raw, path, err)
+	}
+	return value, nil
+}
+
+// peakMissingOnce logs a missing memory.peak file (Linux kernels < 5.19) only once.
+var peakMissingOnce sync.Once
+
 // tryReadStatValue reads one "key value" line from a cgroup file such as cpu.stat.
 func tryReadStatValue(path, key string) (uint64, error) {
 	data, err := os.ReadFile(path)
@@ -193,12 +219,16 @@ func readJobStat(jobId string, meta jobData, dir string) JobStat {
 
 	dirMemoryPeak := dir + "memory.peak"
 	memoryPeak, memoryPeakErr := tryReadCGroupsAsUint(dirMemoryPeak)
-	if memoryPeakErr != nil {
+	if errors.Is(memoryPeakErr, os.ErrNotExist) {
+		peakMissingOnce.Do(func() {
+			helper.GeneralLogger.Printf("memory.peak is missing (Linux kernel < 5.19?), peak memory won't be exported: %v", memoryPeakErr)
+		})
+	} else if memoryPeakErr != nil {
 		helper.ErrorLogger.Printf("Couldn't read memory.peak for job %s: %v", jobId, memoryPeakErr)
 	}
 
 	dirMemoryMax := dir + "memory.max"
-	memoryMax, memoryMaxErr := tryReadCGroupsAsUint(dirMemoryMax)
+	memoryMax, memoryMaxErr := tryReadMemoryLimit(dirMemoryMax)
 	if memoryMaxErr != nil {
 		helper.ErrorLogger.Printf("Couldn't read memory.max for job %s: %v", jobId, memoryMaxErr)
 	}
@@ -232,7 +262,6 @@ func readJobStat(jobId string, meta jobData, dir string) JobStat {
 func (jobs *allJobs) Jobs() []JobStat {
 	jobs.getNewJobs()
 	jobs.clearOldJobs()
-	helper.GeneralLogger.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
 	stats := make([]JobStat, 0, len(jobs.JobCache))
 	for jobId, meta := range jobs.JobCache {

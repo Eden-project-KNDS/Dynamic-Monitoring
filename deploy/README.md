@@ -49,10 +49,10 @@ The stack keeps collecting data while your laptop is closed.
    ```bash
    tmux new -s exporter
    cd ~/Dynamic-Monitoring/app && make build
-   ./slurm-monitor gpunode3 9840
+   ./slurm-monitor 9840
    ```
 
-   Detach with `Ctrl+B` then `D`. Reattach later with `tmux attach -t exporter`.
+   Logs go to `~/Dynamic-Monitoring/app/log/general-log.log`. Detach with `Ctrl+B` then `D`. Reattach later with `tmux attach -t exporter`.
 
 2. Set the Grafana admin password before the first start:
 
@@ -117,8 +117,7 @@ Prometheus reaches the tunnel through `host.docker.internal:9840`; the same `pro
 3. Generate load on the node and observe the dashboard after a minute or so:
 
    ```bash
-   cd ~/Dynamic-Monitoring/app && make test-job
-   cd ~/Dynamic-Monitoring/app/stress_test && make run
+   cd ~/Dynamic-Monitoring/perf/stress_test/cpu && make run_stress
    ```
 
 4. Useful Prometheus queries:

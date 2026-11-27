@@ -172,7 +172,6 @@ func (m *gpuMonitor) getGpuStats() []GPUStat {
 			MemoryUsed:       m.metrics[i].memoryUsedMB * 1024 * 1024, // For proper display in Grafana
 			MemoryUsedValid:  retMem == nvml.SUCCESS,
 		})
-		helper.GeneralLogger.Printf("Successfully appended data from %d gpu\n", i)
 	}
 	return gpuStats
 }

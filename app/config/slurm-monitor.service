@@ -1,7 +1,7 @@
 [Unit]
 Description=Slurm GPU & CPU Resource Monitor
 Documentation=https://github.com/Eden-project-KNDS/Dynamic-Monitoring
-After=network.target slurmd.service
+After=network.target remote-fs.target slurmd.service
 
 [Service]
 Type=simple

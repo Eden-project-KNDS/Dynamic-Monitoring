@@ -1,9 +1,12 @@
 package exporter
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 
+	helper "slurm-monitor/helper"
 	monitor "slurm-monitor/monitor"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -92,5 +95,25 @@ eden_job_memory_used_bytes{job_id="42"} 0
 	)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestCollectLogsScrapeSummary(t *testing.T) {
+	var logs bytes.Buffer
+	helper.GeneralLogger.SetOutput(&logs)
+	t.Cleanup(func() { helper.GeneralLogger.SetOutput(os.Stderr) })
+
+	src := testSource{
+		gpus: []monitor.GPUStat{{Index: 0, UUID: "GPU-a"}, {Index: 1, UUID: "GPU-b"}},
+		jobs: []monitor.JobStat{{JobID: "42"}},
+	}
+	testutil.CollectAndCount(NewCollector(src, src))
+
+	got := logs.String()
+	if n := strings.Count(got, "Scrape served:"); n != 1 {
+		t.Errorf("want exactly 1 summary line per scrape, got %d:\n%s", n, got)
+	}
+	if !strings.Contains(got, "Scrape served: 2 GPUs, 1 jobs in ") {
+		t.Errorf("summary line has wrong counts:\n%s", got)
 	}
 }

@@ -74,15 +74,19 @@ func main() {
 		usage(os.Args[0])
 		return
 	}
-	//init logger to log into log file
-	helper.InitLogger()
-	var err error
-	monitor.ScontrolPath, err = helper.FindScontrol()
-
-	if err != nil {
-		helper.ErrorLogger.Printf("Couldn't find scontrol monitor stops\n")
-		os.Exit(1)
+	// Log to a file. If that fails, keep logging to stderr
+	if err := helper.InitLogger(); err != nil {
+		helper.ErrorLogger.Printf("Logging to stderr instead of a file: %v", err)
 	}
+
+	// Without scontrol the monitor still serves GPU metrics. Job metrics stay empty.
+	scontrolPath, err := helper.FindScontrol()
+	if err != nil {
+		helper.ErrorLogger.Printf("Job metrics disabled: %v", err)
+	} else {
+		helper.GeneralLogger.Printf("Using scontrol at %s", scontrolPath)
+	}
+	monitor.ScontrolPath = scontrolPath
 
 	listenAddress := ":" + os.Args[1]
 	run(listenAddress)

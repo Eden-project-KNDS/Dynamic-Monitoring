@@ -4,12 +4,13 @@ This document describes the active monitor in [app](../app). The application is 
 
 ## Application structure
 
-- [app/main.go](../app/main.go) parses the node name and port, registers the collector, serves `/metrics`, and shuts down cleanly on `SIGINT` or `SIGTERM`.
+- [app/main.go](../app/main.go) reads the listen port, sets up the file logger, looks up `scontrol`, registers the collector, serves `/metrics`, and shuts down cleanly on `SIGINT` or `SIGTERM`.
+- [app/helper/helper.go](../app/helper/helper.go) contains the file logger and the `scontrol` lookup.
 - [app/synchronization/sync.go](../app/synchronization/sync.go) contains the shared shutdown context and wait group.
 - [app/monitor/gpu_monitor.go](../app/monitor/gpu_monitor.go) initializes NVML and reads GPU values when Prometheus scrapes the endpoint.
 - [app/monitor/cgroups_monitor.go](../app/monitor/cgroups_monitor.go) discovers local Slurm jobs and reads cgroup v2 counters and memory values.
 - [app/exporter/collector.go](../app/exporter/collector.go) converts the monitor snapshots into Prometheus metrics.
-- [app/Makefile](../app/Makefile) defines formatting, lint, test, build, and Slurm test targets.
+- [app/Makefile](../app/Makefile) defines formatting, lint, test, build, and systemd install targets.
 - [app/go.mod](../app/go.mod) defines the Go module name and dependencies (`slurm-monitor`).
 - [deploy](../deploy) runs Prometheus and Grafana for persistence and visualization.
 
@@ -18,45 +19,30 @@ This document describes the active monitor in [app](../app). The application is 
 - Go version: `1.27.2` (see [app/go.mod](../app/go.mod))
 - NVIDIA driver and working NVML access for GPU metrics
 - Linux cgroup v2 on the node and a Slurm job layout matching `/sys/fs/cgroup/system.slice/slurmstepd.scope/`
-- `scontrol` available on `PATH`
+- `scontrol` for job metadata, found via `SCONTROL_PATH`, `PATH`, or known install locations
 - `make`, `goimports`, and `golangci-lint` for local development
 
 The cgroup path is intentionally hard-coded in [app/monitor/cgroups_monitor.go](../app/monitor/cgroups_monitor.go), which means this is a node-local Slurm monitor rather than a generic host monitor.
 
 ## Build and run
 
-The executable requires two arguments: the node name and the listen port.
+The executable takes one argument, the listen port.
 
 ```bash
 cd app
 make build
-./slurm-monitor <node-name> <port>
+./slurm-monitor <port>
 ```
 
-The service binds to `:<port>` on all interfaces. The local Makefile target uses `gpunode3` and port `9840`:
+The service binds to `:<port>` on all interfaces. The node name is not exported within the metrics; Prometheus adds a `node` label from its scrape configuration in [deploy/prometheus/prometheus.yml](../deploy/prometheus/prometheus.yml).
 
-```bash
-cd app
-make run
-```
-
-The node name is not exported within the metrics; Prometheus adds a `node` label from its scrape configuration in [deploy/prometheus/prometheus.yml](../deploy/prometheus/prometheus.yml).
-
-### Make targets
-
-- `make` runs `fmt` and then `lint`
-- `make fmt` runs `gofmt` and `goimports`
-- `make lint` runs `golangci-lint`
-- `make test` runs `go test -v ./...`
-- `make build` builds the `slurm-monitor` binary
-- `make run` builds and starts the monitor on `gpunode3:9840`
-- `make test-job` submits a short CPU workload through Slurm
-- `make test-metrics` scrapes the local endpoint and checks for `eden_` metrics
-- `make clean` removes the binary and `.out` files
-
-The Slurm-specific targets require a configured cluster environment and suitable job submission permissions.
+Make targets, configuration variables, log locations, and systemd installation are described in [app/README.md](../app/README.md).
 
 ## Collection behavior
+
+At startup the monitor looks up `scontrol` in this order: `SCONTROL_PATH`, `PATH`, then known install locations. If none is valid, the reasons are logged once, GPU metrics are still served, and job discovery is skipped, so no job metrics are exported until the service restarts.
+
+Each scrape writes one summary line to the log (`Scrape served: N GPUs, M jobs in X`). Job start and end events and read errors are logged as they happen.
 
 Job discovery is performed during each Prometheus scrape; there is no background job loop. The monitor scans `/sys/fs/cgroup/system.slice/slurmstepd.scope/` for directories named `job_<id>`, then calls `scontrol show job <id>` for new jobs to cache job metadata such as user, account, partition, name, and allocated CPU count. When a job disappears from the cgroup tree, its cached metadata is removed.
 
@@ -85,9 +71,8 @@ A reserved GPU with no active process has an empty `job_id`. Mapping GPUs to job
 
 - The Go version is declared as `1.27.2` in [app/go.mod](../app/go.mod).
 - GPU metrics require NVIDIA drivers and NVML access.
-- Job metrics require Linux cgroup v2, the expected cgroup layout, and `scontrol` on `PATH`.
-- The cgroup path is hard-coded; the listen port is provided as a CLI argument.
-- The node-name argument is not included in exported metrics.
+- Job metrics require Linux cgroup v2, the expected cgroup layout, and a reachable `scontrol`.
+- The cgroup path is hard-coded; the listen port is the only CLI argument.
 - The monitor does not persist data itself; Prometheus in [deploy](../deploy) stores the scraped series and Grafana renders the dashboard.
 
 For package-level details, see [app/exporter/README.md](../app/exporter/README.md), [app/monitor/README.md](../app/monitor/README.md), and the draft architecture in [eden-job-exporter-spec.md](eden-job-exporter-spec.md). The specification is a design target rather than a checklist of features already implemented in the active binary.

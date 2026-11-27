@@ -20,8 +20,8 @@ The repository also includes:
 ├── app/                         Active Go monitor and Prometheus exporter
 │   ├── exporter/                Prometheus collector and tests
 │   ├── monitor/                 NVML and Slurm/cgroup data sources
+│   ├── helper/                  Logging and scontrol lookup
 │   ├── config/                  Daemon and service configuration
-│   ├── stress_test/             Slurm workload helpers
 │   ├── Makefile                Build, test, and cluster checks
 │   └── go.mod                  Go module definition
 ├── deploy/                      Prometheus + Grafana via Docker Compose
@@ -40,27 +40,20 @@ The repository also includes:
 - Go 1.27.2 (see [app/go.mod](app/go.mod))
 - NVIDIA drivers and working NVML access for GPU metrics
 - Linux with cgroup v2 and a Slurm node layout matching the app expectations
-- `scontrol` available on `PATH` for job metadata lookup
+- `scontrol` for job metadata lookup, found automatically or via `SCONTROL_PATH`
 - `make`, `goimports`, and `golangci-lint` for the app Makefile targets
 
-The cgroup discovery path is currently hard-coded in [app/monitor/cgroups_monitor.go](app/monitor/cgroups_monitor.go), so this is a node-local monitor rather than a general-purpose desktop monitor.
+The cgroup discovery path is currently hard-coded in [app/monitor/cgroups_monitor.go](app/monitor/cgroups_monitor.go), so this is a node-local monitor rather than a general-purpose desktop monitor. Configuration and log locations are described in [app/README.md](app/README.md#configuration).
 
 ## Quick start
 
 ```bash
 cd app
 make build
-./slurm-monitor <node-name> <port>
+./slurm-monitor 9840
 ```
 
-The app serves metrics at `http://<node>:<port>/metrics`. The default local test command in the Makefile is:
-
-```bash
-cd app
-make run
-```
-
-This starts the exporter on `gpunode3:9840` by default. To view the metrics in Grafana or Prometheus, follow the instructions in [deploy/README.md](deploy/README.md).
+The app serves metrics at `http://<node>:9840/metrics`. To run it as a systemd service, see [app/README.md](app/README.md#running-as-a-service). To view the metrics in Grafana or Prometheus, follow the instructions in [deploy/README.md](deploy/README.md).
 
 ## What the exporter exposes
 
@@ -95,7 +88,17 @@ The stack is configured through Docker Compose and expects the monitor to alread
 - GPU-to-job attribution is based on processes currently running on the GPU; reserved but idle GPUs may still appear with an empty `job_id`.
 - The cgroup path is hard-coded and assumes a specific Slurm/cgroup layout.
 - The project is built for a compute node environment and is not a general-purpose local monitoring solution.
+- Log files are not rotated yet.
 
 ## Contributing
 
 Please keep changes focused, document behavior in the relevant README or implementation guide, and validate the affected app or deployment commands before merging.
+
+Every pull request to `dev` or `main` runs [CI](.github/workflows/ci.yml): `gofmt`, `go vet`, `go test -race`, `golangci-lint` (new issues only), a build, and [commitlint](commitlint.config.js) on the PR's commits. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) with a lower-case subject and one of the scopes `estimator`, `monitor`, `storage`, `analysis`, `infra`, `docs`, `ci`, e.g. `fix(monitor): handle empty account`.
+
+To run the same Go checks locally:
+
+```bash
+cd app
+gofmt -l . && go vet ./... && go test -race ./... && golangci-lint run
+```
