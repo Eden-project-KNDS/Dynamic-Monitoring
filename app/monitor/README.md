@@ -16,7 +16,9 @@ server can continue serving job metrics.
 
 `cgroups_monitor.go` discovers directories named `job_<id>` under the hard-coded
 path `/sys/fs/cgroup/system.slice/slurmstepd.scope/`. It calls `scontrol show job`
-to cache job metadata, and reads CPU and memory cgroup values. Both discovery
+(path found at startup, see [app/README.md](../README.md#configuration))
+to cache job metadata, and reads CPU and memory cgroup values. If `scontrol`
+wasn't found, discovery is skipped and no jobs are reported. Both discovery
 and reading happen during each Prometheus scrape of `/metrics`; there is no
 background loop. Because discovery updates the job maps, the HTTP handler
 allows only one scrape at a time (`MaxRequestsInFlight: 1` in `main.go`).
@@ -32,7 +34,7 @@ cluster-wide job list.
   reserved GPU cannot yet be told apart from a free one.
 - Only a subset of the fields and metrics in the architecture specification is
   currently collected or exported.
-- The cgroup path is hard-coded; the HTTP port is the second CLI argument.
+- The cgroup path is hard-coded.
 
 For the metric contract and implementation status, see
 [`Documentation/DOCUMENTATION.md`](../../Documentation/DOCUMENTATION.md).
