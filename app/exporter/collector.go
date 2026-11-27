@@ -4,6 +4,7 @@ import (
 	helper "slurm-monitor/helper"
 	monitor "slurm-monitor/monitor"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -86,14 +87,18 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- jobMemoryAllocatedDesc
 }
 
+// Collect runs on every scrape and logs one summary line per scrape
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	c.collectGPUs(ch)
-	c.collectJobs(ch)
+	start := time.Now()
+	gpuCount := c.collectGPUs(ch)
+	jobCount := c.collectJobs(ch)
+	helper.GeneralLogger.Printf("Scrape served: %d GPUs, %d jobs in %s",
+		gpuCount, jobCount, time.Since(start).Round(time.Microsecond))
 }
 
-func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
-	helper.GeneralLogger.Println("Pulling data from GPU")
-	for _, g := range c.gpus.GPUs() {
+func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) int {
+	gpus := c.gpus.GPUs()
+	for _, g := range gpus {
 		if g.UtilPercentValid {
 			ch <- prometheus.MustNewConstMetric(
 				gpuUtilizationDesc,
@@ -112,11 +117,12 @@ func (c *Collector) collectGPUs(ch chan<- prometheus.Metric) {
 			)
 		}
 	}
+	return len(gpus)
 }
 
-func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
-	helper.GeneralLogger.Println("Pulling data from jobs")
-	for _, j := range c.jobs.Jobs() {
+func (c *Collector) collectJobs(ch chan<- prometheus.Metric) int {
+	jobs := c.jobs.Jobs()
+	for _, j := range jobs {
 		ch <- prometheus.MustNewConstMetric(
 			jobInfoDesc,
 			prometheus.GaugeValue,
@@ -169,4 +175,5 @@ func (c *Collector) collectJobs(ch chan<- prometheus.Metric) {
 			)
 		}
 	}
+	return len(jobs)
 }

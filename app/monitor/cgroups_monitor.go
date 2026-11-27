@@ -235,7 +235,6 @@ func readJobStat(jobId string, meta jobData, dir string) JobStat {
 func (jobs *allJobs) Jobs() []JobStat {
 	jobs.getNewJobs()
 	jobs.clearOldJobs()
-	helper.GeneralLogger.Printf("Size of JobCache : %d\n", len(jobs.JobCache))
 
 	stats := make([]JobStat, 0, len(jobs.JobCache))
 	for jobId, meta := range jobs.JobCache {
