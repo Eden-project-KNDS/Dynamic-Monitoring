@@ -1,10 +1,14 @@
 package monitor
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
+	helper "slurm-monitor/helper"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -132,5 +136,77 @@ func writeCgroupProcs(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTryReadMemoryLimit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "memory.max")
+
+	for _, test := range []struct {
+		content string
+		want    uint64
+	}{
+		{content: "max\n", want: 0}, // cgroup v2: no limit
+		{content: "1073741824\n", want: 1073741824},
+	} {
+		if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := tryReadMemoryLimit(path)
+		if err != nil || got != test.want {
+			t.Errorf("tryReadMemoryLimit(%q) = (%d, %v), want (%d, nil)", test.content, got, err, test.want)
+		}
+	}
+
+	if err := os.WriteFile(path, []byte("unlimited\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tryReadMemoryLimit(path); !errors.Is(err, strconv.ErrSyntax) {
+		t.Errorf("tryReadMemoryLimit(invalid) error = %v, want wrapped syntax error", err)
+	}
+	if _, err := tryReadMemoryLimit(filepath.Join(dir, "missing")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("tryReadMemoryLimit(missing) error = %v, want wrapped missing-file error", err)
+	}
+}
+
+func TestReadJobStatQuietOnNoLimitAndNoPeak(t *testing.T) {
+	var logs bytes.Buffer
+	helper.GeneralLogger.SetOutput(&logs)
+	helper.ErrorLogger.SetOutput(&logs)
+	t.Cleanup(func() {
+		helper.GeneralLogger.SetOutput(os.Stderr)
+		helper.ErrorLogger.SetOutput(os.Stderr)
+	})
+	peakMissingOnce = sync.Once{} // another test may have used it already
+
+	// A job on gpunode3: no memory limit and no memory.peak (kernel 5.15).
+	dir := t.TempDir()
+	for file, content := range map[string]string{
+		"memory.current": "4096\n",
+		"memory.max":     "max\n",
+		"cpu.stat":       "usage_usec 1000\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for range 3 { // three scrapes
+		got := readJobStat("144", jobData{}, dir+string(os.PathSeparator))
+		if !got.MemoryLimitValid || got.MemoryLimit != 0 {
+			t.Errorf("memory.max=max should be a valid 0 (no limit), got %+v", got)
+		}
+		if got.MemoryPeakValid {
+			t.Errorf("missing memory.peak should be invalid, got %+v", got)
+		}
+	}
+
+	out := logs.String()
+	if n := strings.Count(out, "memory.peak is missing"); n != 1 {
+		t.Errorf("want the missing memory.peak logged once over 3 scrapes, got %d:\n%s", n, out)
+	}
+	if strings.Contains(out, "memory.max") || strings.Contains(out, "Error Logger") {
+		t.Errorf("no errors expected for a job without a memory limit, got:\n%s", out)
 	}
 }
