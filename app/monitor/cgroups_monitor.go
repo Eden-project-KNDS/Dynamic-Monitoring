@@ -60,6 +60,9 @@ func getJobId(folderName string) string {
 }
 
 func (jobs *allJobs) getNewJobs() {
+	if ScontrolPath == "" {
+		return //scontrol wasn't found at startup (logged in main)
+	}
 	entries, err := os.ReadDir(PATH)
 	if err != nil {
 		helper.ErrorLogger.Printf("Couldn't read cgroups at %s: %v", PATH, err)

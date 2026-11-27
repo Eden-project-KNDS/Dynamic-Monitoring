@@ -1,12 +1,13 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // GeneralLogger writes to stderr until InitLogger redirects it to a file
@@ -38,37 +39,56 @@ func InitLogger() error {
 	return nil
 }
 
-func isExec(mode fs.FileMode) bool {
-	return mode&0111 != 0
+// defaultScontrolPaths are checked when SCONTROL_PATH is unset and scontrol isn't in PATH.
+var defaultScontrolPaths = []string{
+	"/usr/local/slurm/latest/bin/scontrol", // gpunode3
+	"/opt/slurm/bin/scontrol",
+	"/usr/local/bin/scontrol",
+	"/usr/bin/scontrol",
+	"/mnt/evafs/software/slurm/amd_epyc/current/bin/scontrol", // stud1
 }
 
-func FindScontrol() (string, error) {
-
-	path, err := exec.LookPath("scontrol")
+// checkExecutable return nil if path is a file with an execute permission bit set.
+func checkExecutable(path string) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		ErrorLogger.Printf("Couldn't find scontrol path checking default path")
-	} else {
-		return path, nil
+		return err
 	}
-	fallbackPaths := []string{
-		"/usr/local/slurm/latest/bin/scontrol",
-		"/opt/slurm/bin/scontrol",
-		"/usr/local/bin/scontrol",
-		"/usr/bin/scontrol",
-		"/mnt/evafs/software/slurm/amd_epyc/current/bin/scontrol",
+	if info.IsDir() {
+		return fmt.Errorf("%s is a directory", path)
 	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("%s is not executable", path)
+	}
+	return nil
+}
 
-	for _, fPath := range fallbackPaths {
-		file, err := os.Stat(fPath)
-		if err != nil {
-			ErrorLogger.Printf("%s is not valid scontrol path, error : %v\n", fPath, err)
-		} else if file.IsDir() || !isExec(file.Mode().Perm()) {
-			ErrorLogger.Printf("%s is not a valid executable file\n", fPath)
+// FindScontrol returns the path of the scontrol binary. It checks, in order:
+// the SCONTROL_PATH variable, the PATH variable, then known install locations.
+func FindScontrol() (string, error) {
+	return findScontrol(defaultScontrolPaths)
+}
+
+func findScontrol(fallbackPath []string) (string, error) {
+	if envPath := strings.TrimSpace(os.Getenv("SCONTROL_PATH")); envPath != "" {
+		if err := checkExecutable(envPath); err != nil {
+			ErrorLogger.Printf("Ignoring SCONTROL_PATH: %v", err)
 		} else {
-			GeneralLogger.Printf("Found scontrol path: %s\n", fPath)
-			return fPath, nil
+			return envPath, nil
 		}
 	}
-	return "", fmt.Errorf("Scontrol is not present\n")
 
+	if path, err := exec.LookPath("scontrol"); err == nil {
+		return path, nil
+	}
+
+	var errs []error
+	for _, path := range fallbackPath {
+		err := checkExecutable(path)
+		if err == nil {
+			return path, nil
+		}
+		errs = append(errs, err)
+	}
+	return "", fmt.Errorf("scontrol not found in SCONTROL_PATH, PATH or known locations: %w", errors.Join(errs...))
 }
